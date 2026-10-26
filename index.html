@@ -238,12 +238,12 @@
         function update() {
             if (gameState !== 'PLAYING') return;
 
-            // Steering
-            if (keys.left && Math.abs(car.speed) > 0.5) {
-                car.angle -= car.turnSpeed * (car.speed / car.maxSpeed);
+            // Steering (permet de pivoter même à l'arrêt ou en mouvement)
+            if (keys.left) {
+                car.angle -= car.turnSpeed * Math.max(0.4, Math.min(1.0, Math.abs(car.speed) / 2));
             }
-            if (keys.right && Math.abs(car.speed) > 0.5) {
-                car.angle += car.turnSpeed * (car.speed / car.maxSpeed);
+            if (keys.right) {
+                car.angle += car.turnSpeed * Math.max(0.4, Math.min(1.0, Math.abs(car.speed) / 2));
             }
 
             // Acceleration & Braking
