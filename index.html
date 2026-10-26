@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Top Down Racing</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #111;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+        #gameCanvas {
+            display: block;
+            background: #2b7a0b;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 2px 2px #000;
+            pointer-events: none;
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            pointer-events: none;
+        }
+        .control-group {
+            display: flex;
+            gap: 15px;
+            pointer-events: auto;
+        }
+        .btn {
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.3);
+            border: 3px solid white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            active-background: rgba(255, 255, 255, 0.6);
+            touch-action: manipulation;
+        }
+        .btn:active, .btn.pressed {
+            background: rgba(255, 255, 255, 0.7);
+            transform: scale(0.95);
+        }
+        #restartScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+        h1 { margin-bottom: 10px; font-size: 32px; color: #ffcc00; text-align: center; }
+        p { font-size: 18px; margin-bottom: 20px; text-align: center; }
+        .menu-btn {
+            padding: 15px 30px;
+            font-size: 20px;
+            font-weight: bold;
+            background: #ffcc00;
+            color: #111;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .menu-btn:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div id="speedometer">Vitesse: 0 km/h</div>
+        <div id="lapCounter">Tour: 1 / 3</div>
+        <div id="lapTime">Temps: 0.0s</div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="controls">
+        <div class="control-group">
+            <div class="btn" id="leftBtn">◀</div>
+            <div class="btn" id="rightBtn">▶</div>
+        </div>
+        <div class="control-group">
+            <div class="btn" id="brakeBtn">REC</div>
+            <div class="btn" id="accelBtn">GO</div>
+        </div>
+    </div>
+
+    <div id="restartScreen">
+        <h1>TURBO RACING 2D</h1>
+        <p>Restez sur la piste, évitez l'herbe et réalisez 3 tours le plus vite possible !</p>
+        <button class="menu-btn" id="startBtn">JOUER</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Game state
+        let gameState = 'MENU'; // MENU, PLAYING, GAMEOVER
+        let score = { lap: 1, maxLaps: 3, startTime: 0, currentLapTime: 0, bestTime: 0 };
+
+        // Car physics & properties
+        let car = {
+            x: 200,
+            y: 200,
+            width: 30,
+            height: 56,
+            angle: 0,
+            speed: 0,
+            maxSpeed: 8,
+            reverseMaxSpeed: 3,
+            accel: 0.15,
+            friction: 0.05,
+            brake: 0.3,
+            turnSpeed: 0.04
+        };
+
+        // Inputs
+        const keys = { left: false, right: false, accel: false, brake: false };
+
+        // Track checkpoints & layout
+        // Circuit ovale avec des virages
+        const trackCenter = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        
+        function isOnTrack(x, y) {
+            // Définition d'un circuit en anneau / ovale complexe
+            const dx = x - canvas.width / 2;
+            const dy = y - canvas.height / 2;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            // Piste entre rayon 120 et 320 par exemple, avec une forme ovale ou un circuit sinueux
+            // Faisons un circuit rectangulaire aux coins arrondis pour plus de fun
+            let cx = x - canvas.width / 2;
+            let cy = y - canvas.height / 2;
+            
+            // Zone extérieure/intérieure de la piste
+            let outerRadiusX = canvas.width * 0.42;
+            let outerRadiusY = canvas.height * 0.38;
+            let innerRadiusX = canvas.width * 0.22;
+            let innerRadiusY = canvas.height * 0.18;
+
+            let inOuter = (Math.abs(cx) < outerRadiusX && Math.abs(cy) < outerRadiusY);
+            let inInner = (Math.abs(cx) < innerRadiusX && Math.abs(cy) < innerRadiusY);
+
+            // Ajout de coins arrondis ou forme simple de circuit ovale
+            let distFromCenter = Math.sqrt((cx*cx)/(outerRadiusX*outerRadiusX) + (cy*cy)/(outerRadiusY*outerRadiusY));
+            let distFromInnerCenter = Math.sqrt((cx*cx)/(innerRadiusX*innerRadiusX) + (cy*cy)/(innerRadiusY*innerRadiusY));
+
+            return (distFromCenter <= 1.0 && distFromInnerCenter >= 0.85);
+        }
+
+        // Setup touch & mouse listeners for buttons
+        function bindButton(id, keyName) {
+            const el = document.getElementById(id);
+            el.addEventListener('touchstart', (e) => { e.preventDefault(); keys[keyName] = true; el.classList.add('pressed'); });
+            el.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyName] = false; el.classList.remove('pressed'); });
+            el.addEventListener('mousedown', (e) => { e.preventDefault(); keys[keyName] = true; el.classList.add('pressed'); });
+            el.addEventListener('mouseup', (e) => { e.preventDefault(); keys[keyName] = false; el.classList.remove('pressed'); });
+        }
+
+        bindButton('leftBtn', 'left');
+        bindButton('rightBtn', 'right');
+        bindButton('accelBtn', 'accel');
+        bindButton('brakeBtn', 'brake');
+
+        // Clavier PC aussi pour test
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') keys.left = true;
+            if (e.key === 'ArrowRight') keys.right = true;
+            if (e.key === 'ArrowUp') keys.accel = true;
+            if (e.key === 'ArrowDown') keys.brake = true;
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft') keys.left = false;
+            if (e.key === 'ArrowRight') keys.right = false;
+            if (e.key === 'ArrowUp') keys.accel = false;
+            if (e.key === 'ArrowDown') keys.brake = false;
+        });
+
+        document.getElementById('startBtn').addEventListener('click', () => {
+            document.getElementById('restartScreen').style.display = 'none';
+            resetGame();
+            gameState = 'PLAYING';
+        });
+
+        function resetGame() {
+            car.x = canvas.width / 2 - 200;
+            car.y = canvas.height / 2;
+            car.angle = -Math.PI / 2;
+            car.speed = 0;
+            score.lap = 1;
+            score.startTime = Date.now();
+        }
+
+        function update() {
+            if (gameState !== 'PLAYING') return;
+
+            // Steering
+            if (keys.left && Math.abs(car.speed) > 0.5) {
+                car.angle -= car.turnSpeed * (car.speed / car.maxSpeed);
+            }
+            if (keys.right && Math.abs(car.speed) > 0.5) {
+                car.angle += car.turnSpeed * (car.speed / car.maxSpeed);
+            }
+
+            // Acceleration & Braking
+            if (keys.accel) {
+                car.speed += car.accel;
+                if (car.speed > car.maxSpeed) car.speed = car.maxSpeed;
+            } else if (keys.brake) {
+                car.speed -= car.brake;
+                if (car.speed < -car.reverseMaxSpeed) car.speed = -car.reverseMaxSpeed;
+            } else {
+                // Friction
+                if (car.speed > 0) {
+                    car.speed -= car.friction;
+                    if (car.speed < 0) car.speed = 0;
+                } else if (car.speed < 0) {
+                    car.speed += car.friction;
+                    if (car.speed > 0) car.speed = 0;
+                }
+            }
+
+            // Check track surface (grass slows down)
+            let currentFrictionCoef = 1.0;
+            if (!isOnTrack(car.x, car.y)) {
+                currentFrictionCoef = 0.5; // Ralentissement dans l'herbe
+                car.speed *= 0.96;
+            }
+
+            // Move car
+            car.x += Math.sin(car.angle) * car.speed * currentFrictionCoef;
+            car.y -= Math.cos(car.angle) * car.speed * currentFrictionCoef;
+
+            // Update HUD
+            let speedKmh = Math.round(Math.abs(car.speed) * 20);
+            document.getElementById('speedometer').innerText = `Vitesse: ${speedKmh} km/h`;
+            
+            let elapsedTime = ((Date.now() - score.startTime) / 1000).toFixed(1);
+            document.getElementById('lapTime').innerText = `Temps: ${elapsedTime}s`;
+
+            // Check finish line (simple passage par le point de départ X0, Y0)
+            let startLineX = canvas.width / 2 - 200;
+            let startLineY = canvas.height / 2;
+            let distToStart = Math.sqrt((car.x - startLineX)**2 + (car.y - startLineY)**2);
+            
+            // Logique simple de tour complété si on s'éloigne et revient après 5 secondes
+            // (Simplifié pour le prototype)
+        }
+
+        function drawTrack() {
+            ctx.fillStyle = '#2b7a0b'; // Herbe
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            let cx = canvas.width / 2;
+            let cy = canvas.height / 2;
+
+            let outerRadiusX = canvas.width * 0.42;
+            let outerRadiusY = canvas.height * 0.38;
+            let innerRadiusX = canvas.width * 0.22;
+            let innerRadiusY = canvas.height * 0.18;
+
+            // Tracé de la Piste (asphalte gris foncé)
+            ctx.save();
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, outerRadiusX, outerRadiusY, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#444';
+            ctx.fill();
+            ctx.lineWidth = 10;
+            ctx.strokeStyle = '#fff';
+            ctx.stroke();
+            ctx.restore();
+
+            // Pelouse intérieure
+            ctx.save();
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, innerRadiusX, innerRadiusY, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#2b7a0b';
+            ctx.fill();
+            ctx.lineWidth = 10;
+            ctx.strokeStyle = '#fff';
+            ctx.stroke();
+            ctx.restore();
+
+            // Ligne de départ
+            ctx.strokeStyle = '#ffcc00';
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.moveTo(cx - 200, cy - innerRadiusY);
+            ctx.lineTo(cx - 200, cy - outerRadiusY);
+            ctx.stroke();
+        }
+
+        function drawCar() {
+            ctx.save();
+            ctx.translate(car.x, car.y);
+            ctx.rotate(car.angle);
+
+            // Ombre portée
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.fillRect(-car.width/2 + 4, -car.height/2 + 4, car.width, car.height);
+
+            // Carrosserie rouge sportive
+            ctx.fillStyle = '#e63946';
+            ctx.fillRect(-car.width/2, -car.height/2, car.width, car.height);
+
+            // Pare-brise
+            ctx.fillStyle = '#1d3557';
+            ctx.fillRect(-car.width/2 + 4, -car.height/4, car.width - 8, 14);
+
+            // Roues
+            ctx.fillStyle = '#111';
+            ctx.fillRect(-car.width/2 - 5, -car.height/2 + 6, 6, 12);
+            ctx.fillRect(car.width/2 - 1, -car.height/2 + 6, 6, 12);
+            ctx.fillRect(-car.width/2 - 5, car.height/2 - 18, 6, 12);
+            ctx.fillRect(car.width/2 - 1, car.height/2 - 18, 6, 12);
+
+            ctx.restore();
+        }
+
+        function loop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            update();
+            drawTrack();
+            drawCar();
+            requestAnimationFrame(loop);
+        }
+
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>
