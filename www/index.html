@@ -109,6 +109,11 @@
                 if (data.type === 'state') {
                     carState = data.car;
                     speedVal = data.speed;
+                    if (data.onTrack) {
+                        document.getElementById('speedometer').style.color = '#fff';
+                    } else {
+                        document.getElementById('speedometer').style.color = '#e63946';
+                    }
                 }
             };
 
@@ -129,7 +134,7 @@
             ctx.fillStyle = '#2b7a0b';
             ctx.fillRect(-2000, -2000, 6000, 6000);
 
-            const roadWidth = 120; // 4 fois la largeur de la voiture (30 * 4)
+            const roadWidth = 300; // 10 fois la largeur de la voiture (30 * 10)
 
             ctx.save();
             ctx.lineWidth = roadWidth + 16;
