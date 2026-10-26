@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Top Down Racing - Client Android</title>
+    <title>Monza Racing - Client Android</title>
     <style>
         * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #111; font-family: Arial, sans-serif; color: white; }
         #gameCanvas { display: block; background: #2b7a0b; }
-        #ui { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; text-shadow: 2px 2px #000; pointer-events: none; }
-        #controls { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 20px; pointer-events: none; }
+        #ui { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; text-shadow: 2px 2px #000; pointer-events: none; z-index: 5; }
+        #controls { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 20px; pointer-events: none; z-index: 5; }
         .control-group { display: flex; gap: 15px; pointer-events: auto; }
         .btn { width: 80px; height: 80px; background: rgba(255, 255, 255, 0.3); border: 3px solid white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; color: white; touch-action: manipulation; }
         .btn:active, .btn.pressed { background: rgba(255, 255, 255, 0.7); transform: scale(0.95); }
@@ -39,7 +39,7 @@
     </div>
 
     <div id="connectionScreen">
-        <h1>CLIENT CLIENT/SERVEUR</h1>
+        <h1>MONZA RACING (CLIENT)</h1>
         <p>Entrez l'IP du serveur Windows (ex: 192.168.1.X:3000)</p>
         <input type="text" id="serverIp" value="localhost:3000">
         <button class="menu-btn" id="connectBtn">CONNEXION</button>
@@ -57,7 +57,7 @@
         resize();
 
         let ws = null;
-        let carState = { x: 400, y: 300, angle: 0 };
+        let carState = { x: 500, y: 300, angle: 0 };
         let speedVal = 0;
         let inputs = { left: false, right: false, accel: false, brake: false };
 
@@ -118,36 +118,44 @@
             };
         });
 
+        // Points approximatifs du circuit de Monza (tracé simplifié en boucle)
+        const monzaPoints = [
+            {x: 500, y: 700}, {x: 1200, y: 700}, {x: 1500, y: 600}, 
+            {x: 1600, y: 300}, {x: 1300, y: 150}, {x: 900, y: 150},
+            {x: 700, y: 250}, {x: 500, y: 350}, {x: 300, y: 250},
+            {x: 200, y: 400}, {x: 200, y: 600}
+        ];
+
         function drawTrack() {
-            ctx.fillStyle = '#2b7a0b';
+            ctx.fillStyle = '#2b7a0b'; // Herbe
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            let cx = canvas.width / 2;
-            let cy = canvas.height / 2;
 
+            // Largeur de la route = 4 fois la largeur de la voiture (voiture width = 30 => route width = 120)
+            const roadWidth = 120;
+
+            // Dessin de la piste (asphalte gris foncé avec bordures blanches)
             ctx.save();
-            ctx.beginPath();
-            ctx.ellipse(cx, cy, canvas.width * 0.42, canvas.height * 0.38, 0, 0, Math.PI * 2);
-            ctx.fillStyle = '#444';
-            ctx.fill();
-            ctx.lineWidth = 10;
+            ctx.lineWidth = roadWidth + 16;
             ctx.strokeStyle = '#fff';
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(monzaPoints[0].x, monzaPoints[0].y);
+            for (let i = 1; i < monzaPoints.length; i++) {
+                ctx.lineTo(monzaPoints[i].x, monzaPoints[i].y);
+            }
+            ctx.closePath();
             ctx.stroke();
-            ctx.restore();
 
-            ctx.save();
-            ctx.beginPath();
-            ctx.ellipse(cx, cy, canvas.width * 0.22, canvas.height * 0.18, 0, 0, Math.PI * 2);
-            ctx.fillStyle = '#2b7a0b';
-            ctx.fill();
-            ctx.lineWidth = 10;
-            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = roadWidth;
+            ctx.strokeStyle = '#444';
             ctx.stroke();
             ctx.restore();
         }
 
         function drawCar() {
             ctx.save();
-            ctx.translate(carState.x, carState.y);
+            ctx.translate(canvas.width / 2, canvas.height / 2);
             ctx.rotate(carState.angle);
 
             ctx.fillStyle = 'rgba(0,0,0,0.3)';
@@ -170,8 +178,16 @@
 
         function loop() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            // La caméra suit la voiture pour qu'elle reste au centre
+            ctx.translate(canvas.width / 2 - carState.x, canvas.height / 2 - carState.y);
+
             drawTrack();
             drawCar();
+
+            ctx.restore();
+
             document.getElementById('speedometer').innerText = `Vitesse: ${speedVal} km/h`;
             requestAnimationFrame(loop);
         }

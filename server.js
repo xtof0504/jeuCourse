@@ -18,9 +18,8 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocket.Server({ server });
 
-// Game state on the Windows server
 let gameState = {
-    car: { x: 400, y: 300, angle: 0, speed: 0 },
+    car: { x: 500, y: 700, angle: 0, speed: 0 },
     inputs: { left: false, right: false, accel: false, brake: false }
 };
 
@@ -50,12 +49,10 @@ wss.on('connection', (ws) => {
     });
 });
 
-// Server game loop (60 FPS)
 setInterval(() => {
     let car = gameState.car;
     let inputs = gameState.inputs;
 
-    // Steering
     if (inputs.left) {
         car.angle -= constants.turnSpeed * Math.max(0.4, Math.min(1.0, Math.abs(car.speed) / 2));
     }
@@ -63,7 +60,6 @@ setInterval(() => {
         car.angle += constants.turnSpeed * Math.max(0.4, Math.min(1.0, Math.abs(car.speed) / 2));
     }
 
-    // Acceleration & Braking
     if (inputs.accel) {
         car.speed += constants.accel;
         if (car.speed > constants.maxSpeed) car.speed = constants.maxSpeed;
@@ -80,11 +76,9 @@ setInterval(() => {
         }
     }
 
-    // Move car
     car.x += Math.sin(car.angle) * car.speed;
     car.y -= Math.cos(car.angle) * car.speed;
 
-    // Broadcast state to all connected clients
     const payload = JSON.stringify({ type: 'state', car, speed: Math.round(Math.abs(car.speed) * 20) });
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
@@ -94,5 +88,5 @@ setInterval(() => {
 }, 1000 / 60);
 
 server.listen(3000, () => {
-    console.log('Serveur Windows démarré sur http://localhost:3000');
+    console.log('Serveur Windows (Monza) démarré sur http://localhost:3000');
 });
