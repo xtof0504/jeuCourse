@@ -57,7 +57,7 @@
         resize();
 
         let ws = null;
-        let carState = { x: 500, y: 300, angle: 0 };
+        let carState = { x: 500, y: 700, angle: 0 };
         let speedVal = 0;
         let inputs = { left: false, right: false, accel: false, brake: false };
 
@@ -118,7 +118,6 @@
             };
         });
 
-        // Points approximatifs du circuit de Monza (tracé simplifié en boucle)
         const monzaPoints = [
             {x: 500, y: 700}, {x: 1200, y: 700}, {x: 1500, y: 600}, 
             {x: 1600, y: 300}, {x: 1300, y: 150}, {x: 900, y: 150},
@@ -127,13 +126,11 @@
         ];
 
         function drawTrack() {
-            ctx.fillStyle = '#2b7a0b'; // Herbe
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#2b7a0b';
+            ctx.fillRect(-2000, -2000, 6000, 6000);
 
-            // Largeur de la route = 4 fois la largeur de la voiture (voiture width = 30 => route width = 120)
-            const roadWidth = 120;
+            const roadWidth = 120; // 4 fois la largeur de la voiture (30 * 4)
 
-            // Dessin de la piste (asphalte gris foncé avec bordures blanches)
             ctx.save();
             ctx.lineWidth = roadWidth + 16;
             ctx.strokeStyle = '#fff';
@@ -155,6 +152,7 @@
 
         function drawCar() {
             ctx.save();
+            // La voiture est positionnée exactement au centre de l'écran et ne bouge pas de l'écran
             ctx.translate(canvas.width / 2, canvas.height / 2);
             ctx.rotate(carState.angle);
 
@@ -180,13 +178,15 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             ctx.save();
-            // La caméra suit la voiture pour qu'elle reste au centre
+            // On translate le monde inversement à la position de la voiture pour que le circuit défile sous la voiture fixe
             ctx.translate(canvas.width / 2 - carState.x, canvas.height / 2 - carState.y);
 
             drawTrack();
-            drawCar();
 
             ctx.restore();
+
+            // La voiture est dessinée par-dessus, fixe au centre absolu de l'écran
+            drawCar();
 
             document.getElementById('speedometer').innerText = `Vitesse: ${speedVal} km/h`;
             requestAnimationFrame(loop);
