@@ -18,8 +18,10 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocket.Server({ server });
 
+const scale = 4;
+
 let gameState = {
-    car: { x: 500, y: 700, angle: 0, speed: 0 },
+    car: { x: 500 * scale, y: 700 * scale, angle: Math.PI / 2, speed: 0 },
     inputs: { left: false, right: false, accel: false, brake: false }
 };
 
@@ -32,14 +34,15 @@ const constants = {
     turnSpeed: 0.04
 };
 
-const monzaPoints = [
+const baseMonzaPoints = [
     {x: 500, y: 700}, {x: 1200, y: 700}, {x: 1500, y: 600}, 
     {x: 1600, y: 300}, {x: 1300, y: 150}, {x: 900, y: 150},
     {x: 700, y: 250}, {x: 500, y: 350}, {x: 300, y: 250},
     {x: 200, y: 400}, {x: 200, y: 600}
 ];
 
-// Fonction pour vérifier si un point (x, y) est sur le circuit de Monza (largeur 300)
+const monzaPoints = baseMonzaPoints.map(p => ({ x: p.x * scale, y: p.y * scale }));
+
 function isOnTrack(x, y) {
     const roadWidth = 300;
     const halfWidth = roadWidth / 2;
@@ -48,7 +51,6 @@ function isOnTrack(x, y) {
         let p1 = monzaPoints[i];
         let p2 = monzaPoints[(i + 1) % monzaPoints.length];
 
-        // Calcul de la distance du point (x, y) au segment [p1, p2]
         let A = x - p1.x;
         let B = y - p1.y;
         let C = p2.x - p1.x;
@@ -103,7 +105,6 @@ setInterval(() => {
     let car = gameState.car;
     let inputs = gameState.inputs;
 
-    // Vérifier si la voiture est sur le circuit
     let onTrack = isOnTrack(car.x, car.y);
     let currentMaxSpeed = onTrack ? constants.maxSpeed : (constants.maxSpeed / 5);
 
@@ -130,7 +131,6 @@ setInterval(() => {
         }
     }
 
-    // Si hors de la piste, appliquer un freinage/frottement supplémentaire
     if (!onTrack) {
         car.speed *= 0.95;
     }
@@ -147,5 +147,5 @@ setInterval(() => {
 }, 1000 / 60);
 
 server.listen(3000, () => {
-    console.log('Serveur Windows (Monza + Hors-piste) démarré sur http://localhost:3000');
+    console.log('Serveur Windows (Monza) démarré sur http://localhost:3000');
 });

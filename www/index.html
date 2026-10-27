@@ -57,7 +57,8 @@
         resize();
 
         let ws = null;
-        let carState = { x: 500, y: 700, angle: 0 };
+        const scale = 4;
+        let carState = { x: 500 * scale, y: 700 * scale, angle: Math.PI / 2 };
         let speedVal = 0;
         let inputs = { left: false, right: false, accel: false, brake: false };
 
@@ -96,7 +97,7 @@
         }
 
         document.getElementById('connectBtn').addEventListener('click', () => {
-            const ip = document.getElementById('serverIp').value;
+            const ip = document.getElementById('serverIp.value') || document.getElementById('serverIp').value;
             ws = new WebSocket(`ws://${ip}`);
 
             ws.onopen = () => {
@@ -123,18 +124,20 @@
             };
         });
 
-        const monzaPoints = [
+        const baseMonzaPoints = [
             {x: 500, y: 700}, {x: 1200, y: 700}, {x: 1500, y: 600}, 
             {x: 1600, y: 300}, {x: 1300, y: 150}, {x: 900, y: 150},
             {x: 700, y: 250}, {x: 500, y: 350}, {x: 300, y: 250},
             {x: 200, y: 400}, {x: 200, y: 600}
         ];
 
+        const monzaPoints = baseMonzaPoints.map(p => ({ x: p.x * scale, y: p.y * scale }));
+
         function drawTrack() {
             ctx.fillStyle = '#2b7a0b';
-            ctx.fillRect(-2000, -2000, 6000, 6000);
+            ctx.fillRect(-5000, -5000, 15000, 15000);
 
-            const roadWidth = 300; // 10 fois la largeur de la voiture (30 * 10)
+            const roadWidth = 300; // 10 fois la largeur de la voiture
 
             ctx.save();
             ctx.lineWidth = roadWidth + 16;
@@ -157,7 +160,6 @@
 
         function drawCar() {
             ctx.save();
-            // La voiture est positionnée exactement au centre de l'écran et ne bouge pas de l'écran
             ctx.translate(canvas.width / 2, canvas.height / 2);
             ctx.rotate(carState.angle);
 
@@ -183,14 +185,12 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             ctx.save();
-            // On translate le monde inversement à la position de la voiture pour que le circuit défile sous la voiture fixe
             ctx.translate(canvas.width / 2 - carState.x, canvas.height / 2 - carState.y);
 
             drawTrack();
 
             ctx.restore();
 
-            // La voiture est dessinée par-dessus, fixe au centre absolu de l'écran
             drawCar();
 
             document.getElementById('speedometer').innerText = `Vitesse: ${speedVal} km/h`;
