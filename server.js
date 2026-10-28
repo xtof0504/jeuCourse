@@ -26,12 +26,12 @@ let gameState = {
 };
 
 const constants = {
-    maxSpeed: 8,
-    reverseMaxSpeed: 3,
-    accel: 0.15,
-    friction: 0.05,
-    brake: 0.3,
-    turnSpeed: 0.04
+    maxSpeed: 20,          // 20 * 10 = 200 km/h max
+    reverseMaxSpeed: 5,
+    accel: 0.4,
+    friction: 0.04,
+    brake: 0.6,
+    turnSpeed: 0.045
 };
 
 const baseMonzaPoints = [
@@ -138,7 +138,7 @@ setInterval(() => {
     car.x += Math.sin(car.angle) * car.speed;
     car.y -= Math.cos(car.angle) * car.speed;
 
-    const payload = JSON.stringify({ type: 'state', car, speed: Math.round(Math.abs(car.speed) * 20), onTrack });
+    const payload = JSON.stringify({ type: 'state', car, speed: Math.round(Math.abs(car.speed) * 10), onTrack });
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(payload);
