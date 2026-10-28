@@ -19,20 +19,14 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server });
 
 const scale = 4;
+const MAX_PLAYERS = 10;
+const CAR_WIDTH = 60;
+const CAR_HEIGHT = 112;
 
-let gameState = {
-    car: { x: (500 - 40) * scale, y: 700 * scale, angle: Math.PI / 2, speed: 0 },
-    inputs: { left: false, right: false, accel: false, brake: false },
-    race: {
-        startTime: null,
-        lastLapTime: 0,
-        bestTime: 0,
-        passedLineLastFrame: false
-    }
-};
+let players = {};
 
 const constants = {
-    maxSpeed: 20,          // 20 * 10 = 200 km/h max
+    maxSpeed: 20,
     reverseMaxSpeed: 5,
     accel: 0.4,
     friction: 0.04,
@@ -91,95 +85,151 @@ function isOnTrack(x, y) {
 }
 
 wss.on('connection', (ws) => {
-    console.log('Client Android connecté !');
+    const playerKeys = Object.keys(players);
+    if (playerKeys.length >= MAX_PLAYERS) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Serveur complet (10 joueurs max)' }));
+        ws.close();
+        return;
+    }
+
+    const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
+    console.log(`Joueur connecté : ${playerId} (${playerKeys.length + 1}/${MAX_PLAYERS})`);
+
+    const startX = (500 - 40 - (playerKeys.length * 20)) * scale;
+    const startY = 700 * scale;
+
+    players[playerId] = {
+        id: playerId,
+        car: { x: startX, y: startY, angle: Math.PI / 2, speed: 0 },
+        inputs: { left: false, right: false, accel: false, brake: false },
+        race: { startTime: null, lastLapTime: 0, bestTime: 0, passedLineLastFrame: false }
+    };
 
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
-            if (data.type === 'input') {
-                gameState.inputs = data.inputs;
+            if (data.type === 'input' && players[playerId]) {
+                players[playerId].inputs = data.inputs;
             }
         } catch (e) {}
     });
 
     ws.on('close', () => {
-        console.log('Client déconnecté');
+        console.log(`Joueur déconnecté : ${playerId}`);
+        delete players[playerId];
     });
 });
 
 setInterval(() => {
-    let car = gameState.car;
-    let inputs = gameState.inputs;
+    // 1. Mouvement de chaque voiture
+    for (let id in players) {
+        let p = players[id];
+        let car = p.car;
+        let inputs = p.inputs;
 
-    let onTrack = isOnTrack(car.x, car.y);
-    let currentMaxSpeed = onTrack ? constants.maxSpeed : (constants.maxSpeed / 5);
+        let onTrack = isOnTrack(car.x, car.y);
+        let currentMaxSpeed = onTrack ? constants.maxSpeed : (constants.maxSpeed / 5);
 
-    if (inputs.left) {
-        car.angle -= constants.turnSpeed * Math.max(0.4, Math.min(1.0, Math.abs(car.speed) / 2));
-    }
-    if (inputs.right) {
-        car.angle += constants.turnSpeed * Math.max(0.4, Math.min(1.0, Math.abs(car.speed) / 2));
-    }
-
-    if (inputs.accel) {
-        car.speed += constants.accel;
-        if (car.speed > currentMaxSpeed) car.speed = currentMaxSpeed;
-    } else if (inputs.brake) {
-        car.speed -= constants.brake;
-        if (car.speed < -constants.reverseMaxSpeed) car.speed = -constants.reverseMaxSpeed;
-    } else {
-        if (car.speed > 0) {
-            car.speed -= constants.friction;
-            if (car.speed < 0) car.speed = 0;
-        } else if (car.speed < 0) {
-            car.speed += constants.friction;
-            if (car.speed > 0) car.speed = 0;
+        if (inputs.left) {
+            car.angle -= constants.turnSpeed * Math.max(0.4, Math.min(1.0, Math.abs(car.speed) / 2));
         }
-    }
+        if (inputs.right) {
+            car.angle += constants.turnSpeed * Math.max(0.4, Math.min(1.0, Math.abs(car.speed) / 2));
+        }
 
-    if (!onTrack) {
-        car.speed *= 0.95;
-    }
-
-    car.x += Math.sin(car.angle) * car.speed;
-    car.y -= Math.cos(car.angle) * car.speed;
-
-    // Ligne de départ / arrivée (alignée sur le premier point du circuit de Monza)
-    let lineX = monzaPoints[0].x;
-    let lineY1 = monzaPoints[0].y - 150;
-    let lineY2 = monzaPoints[0].y + 150;
-
-    let crossingLine = (car.x >= lineX - 15 && car.x <= lineX + 15 && car.y >= lineY1 && car.y <= lineY2);
-
-    let race = gameState.race;
-    if (crossingLine && !race.passedLineLastFrame) {
-        let now = Date.now();
-        if (!race.startTime) {
-            race.startTime = now;
+        if (inputs.accel) {
+            car.speed += constants.accel;
+            if (car.speed > currentMaxSpeed) car.speed = currentMaxSpeed;
+        } else if (inputs.brake) {
+            car.speed -= constants.brake;
+            if (car.speed < -constants.reverseMaxSpeed) car.speed = -constants.reverseMaxSpeed;
         } else {
-            let lapDuration = (now - race.startTime) / 1000;
-            race.lastLapTime = lapDuration;
-            if (!race.bestTime || lapDuration < race.bestTime) {
-                race.bestTime = lapDuration;
+            if (car.speed > 0) {
+                car.speed -= constants.friction;
+                if (car.speed < 0) car.speed = 0;
+            } else if (car.speed < 0) {
+                car.speed += constants.friction;
+                if (car.speed > 0) car.speed = 0;
             }
-            race.startTime = now;
         }
-        race.passedLineLastFrame = true;
-    } else if (!crossingLine) {
-        race.passedLineLastFrame = false;
+
+        if (!onTrack) {
+            car.speed *= 0.95;
+        }
+
+        car.x += Math.sin(car.angle) * car.speed;
+        car.y -= Math.cos(car.angle) * car.speed;
     }
 
-    let currentLapTime = race.startTime ? ((Date.now() - race.startTime) / 1000).toFixed(2) : '0.00';
+    // 2. Gestion des collisions entre voitures (rebond / choc élastique simple)
+    const playerIds = Object.keys(players);
+    for (let i = 0; i < playerIds.length; i++) {
+        for (let j = i + 1; j < playerIds.length; j++) {
+            let p1 = players[playerIds[i]];
+            let p2 = players[playerIds[j]];
+            let c1 = p1.car;
+            let c2 = p2.car;
 
-    const payload = JSON.stringify({
-        type: 'state',
-        car,
-        speed: Math.round(Math.abs(car.speed) * 10),
-        onTrack,
-        currentLapTime,
-        lastLapTime: race.lastLapTime ? race.lastLapTime.toFixed(2) : '--',
-        bestTime: race.bestTime ? race.bestTime.toFixed(2) : '--'
-    });
+            let dx = c2.x - c1.x;
+            let dy = c2.y - c1.y;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+            let minDist = (CAR_WIDTH / 2) + (CAR_WIDTH / 2); // Rayon de collision
+
+            if (dist < minDist) {
+                // Collision détectée : échange partiel des vitesses et répulsion
+                let overlap = minDist - dist;
+                let nx = dx / dist;
+                let ny = dy / dist;
+
+                // Repousser les voitures pour éviter qu'elles ne se bloquent l'une dans l'autre
+                c1.x -= nx * overlap * 0.5;
+                c1.y -= ny * overlap * 0.5;
+                c2.x += nx * overlap * 0.5;
+                c2.y += ny * overlap * 0.5;
+
+                // Échange de vitesse (choc élastique amorti)
+                let tempSpeed = c1.speed;
+                c1.speed = c2.speed * 0.7;
+                c2.speed = tempSpeed * 0.7;
+            }
+        }
+    }
+
+    // 3. Gestion des tours et du chronomètre
+    for (let id in playerIds) {
+        let p = players[playerIds[id]];
+        let car = p.car;
+        let race = p.race;
+
+        let lineX = monzaPoints[0].x;
+        let lineY1 = monzaPoints[0].y - 150;
+        let lineY2 = monzaPoints[0].y + 150;
+
+        let crossingLine = (car.x >= lineX - 15 && car.x <= lineX + 15 && car.y >= lineY1 && car.y <= lineY2);
+
+        if (crossingLine && !race.passedLineLastFrame) {
+            let now = Date.now();
+            if (!race.startTime) {
+                race.startTime = now;
+            } else {
+                let lapDuration = (now - race.startTime) / 1000;
+                race.lastLapTime = lapDuration;
+                if (!race.bestTime || lapDuration < race.bestTime) {
+                    race.bestTime = lapDuration;
+                }
+                race.startTime = now;
+            }
+            race.passedLineLastFrame = true;
+        } else if (!crossingLine) {
+            race.passedLineLastFrame = false;
+        }
+
+        p.currentLapTime = race.startTime ? ((Date.now() - race.startTime) / 1000).toFixed(2) : '0.00';
+        p.onTrack = isOnTrack(car.x, car.y);
+        p.speedKmh = Math.round(Math.abs(car.speed) * 10);
+    }
+
+    const payload = JSON.stringify({ type: 'state', players });
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(payload);
@@ -188,5 +238,5 @@ setInterval(() => {
 }, 1000 / 60);
 
 server.listen(3000, () => {
-    console.log('Serveur Windows (Monza) démarré sur http://localhost:3000');
+    console.log('Serveur multijoueur avec collisions démarré sur http://localhost:3000');
 });

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Monza Racing - Client Android</title>
+    <title>Monza Multijoueur Racing</title>
     <style>
         * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #111; font-family: Arial, sans-serif; color: white; }
@@ -40,7 +40,7 @@
     </div>
 
     <div id="connectionScreen">
-        <h1>MONZA RACING (CLIENT)</h1>
+        <h1>MONZA MULTIJOUEUR (10 MAX)</h1>
         <p>Entrez l'IP du serveur Windows (ex: 192.168.1.X:3000)</p>
         <input type="text" id="serverIp" value="localhost:3000">
         <button class="menu-btn" id="connectBtn">CONNEXION</button>
@@ -59,11 +59,11 @@
 
         let ws = null;
         const scale = 4;
-        let carState = { x: 500 * scale, y: 700 * scale, angle: Math.PI / 2 };
-        let speedVal = 0;
+        let players = {};
+        let myId = null;
         let inputs = { left: false, right: false, accel: false, brake: false };
 
-        // Charger l'image locale ferrari.png
+        // Charger l'image de la Ferrari
         const carImg = new Image();
         carImg.src = 'ferrari.png';
         let imgLoaded = false;
@@ -83,17 +83,17 @@
         bindButton('brakeBtn', 'brake');
 
         window.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowLeft') inputs.left = true;
-            if (e.key === 'ArrowRight') inputs.right = true;
-            if (e.key === 'ArrowUp') inputs.accel = true;
-            if (e.key === 'ArrowDown') inputs.brake = true;
+            if (e.key === 'ArrowLeft' || e.key === 'q' || e.key === 'Q') inputs.left = true;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') inputs.right = true;
+            if (e.key === 'ArrowUp' || e.key === 'z' || e.key === 'Z' || e.key === 'w' || e.key === 'W') inputs.accel = true;
+            if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S' || e.key === 'r' || e.key === 'R') inputs.brake = true;
             sendInputs();
         });
         window.addEventListener('keyup', (e) => {
-            if (e.key === 'ArrowLeft') inputs.left = false;
-            if (e.key === 'ArrowRight') inputs.right = false;
-            if (e.key === 'ArrowUp') inputs.accel = false;
-            if (e.key === 'ArrowDown') inputs.brake = false;
+            if (e.key === 'ArrowLeft' || e.key === 'q' || e.key === 'Q') inputs.left = false;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') inputs.right = false;
+            if (e.key === 'ArrowUp' || e.key === 'z' || e.key === 'Z' || e.key === 'w' || e.key === 'W') inputs.accel = false;
+            if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S' || e.key === 'r' || e.key === 'R') inputs.brake = false;
             sendInputs();
         });
 
@@ -104,7 +104,7 @@
         }
 
         document.getElementById('connectBtn').addEventListener('click', () => {
-            const ip = document.getElementById('serverIp.value') || document.getElementById('serverIp').value;
+            const ip = document.getElementById('serverIp').value;
             ws = new WebSocket(`ws://${ip}`);
 
             ws.onopen = () => {
@@ -115,14 +115,26 @@
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 if (data.type === 'state') {
-                    carState = data.car;
-                    speedVal = data.speed;
-                    document.getElementById('chrono').innerHTML = `Tour: ${data.currentLapTime}s<br>Dernier: ${data.lastLapTime}s | Meilleur: ${data.bestTime}s`;
-                    if (data.onTrack) {
-                        document.getElementById('speedometer').style.color = '#fff';
-                    } else {
-                        document.getElementById('speedometer').style.color = '#e63946';
+                    players = data.players;
+                    // Déterminer notre propre ID si ce n'est pas fait (premier message ou auto-détection)
+                    if (!myId) {
+                        const ids = Object.keys(players);
+                        myId = ids[ids.length - 1]; // Le dernier connecté
                     }
+
+                    if (myId && players[myId]) {
+                        let me = players[myId];
+                        document.getElementById('speedometer').innerText = `Vitesse: ${me.speedKmh} km/h`;
+                        document.getElementById('chrono').innerHTML = `Tour: ${me.currentLapTime}s<br>Dernier: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s | Meilleur: ${me.race.bestTime ? me.race.bestTime.toFixed(2) : '--'}s`;
+                        
+                        if (me.onTrack) {
+                            document.getElementById('speedometer').style.color = '#fff';
+                        } else {
+                            document.getElementById('speedometer').style.color = '#e63946';
+                        }
+                    }
+                } else if (data.type === 'error') {
+                    alert(data.message);
                 }
             };
 
@@ -145,7 +157,7 @@
             ctx.fillStyle = '#2b7a0b';
             ctx.fillRect(-5000, -5000, 15000, 15000);
 
-            const roadWidth = 300; // 10 fois la largeur de la voiture
+            const roadWidth = 300;
 
             ctx.save();
             ctx.lineWidth = roadWidth + 16;
@@ -164,7 +176,6 @@
             ctx.strokeStyle = '#444';
             ctx.stroke();
 
-            // Dessin de la ligne de départ / arrivée (damier ou ligne jaune/blanche)
             let lineX = monzaPoints[0].x;
             let lineY1 = monzaPoints[0].y - roadWidth / 2;
             let lineY2 = monzaPoints[0].y + roadWidth / 2;
@@ -175,24 +186,22 @@
             ctx.moveTo(lineX, lineY1);
             ctx.lineTo(lineX, lineY2);
             ctx.stroke();
-
             ctx.restore();
         }
 
-        function drawCar() {
+        function drawCar(car) {
             ctx.save();
-            ctx.translate(canvas.width / 2, canvas.height / 2);
-            ctx.rotate(carState.angle);
+            ctx.translate(car.x, car.y);
+            ctx.rotate(car.angle);
 
             if (imgLoaded) {
                 ctx.save();
                 ctx.rotate(-Math.PI / 2);
-                ctx.drawImage(carImg, -45, -25, 90, 50);
+                ctx.drawImage(carImg, -56, -30, 112, 60);
                 ctx.restore();
             } else {
-                // Fallback graphique
                 ctx.fillStyle = '#cc0000';
-                ctx.fillRect(-15, -30, 30, 60);
+                ctx.fillRect(-30, -56, 60, 112);
             }
 
             ctx.restore();
@@ -201,16 +210,22 @@
         function loop() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            ctx.save();
-            ctx.translate(canvas.width / 2 - carState.x, canvas.height / 2 - carState.y);
+            if (myId && players[myId]) {
+                let me = players[myId];
+                ctx.save();
+                // Caméra centrée sur notre propre voiture
+                ctx.translate(canvas.width / 2 - me.car.x, canvas.height / 2 - me.car.y);
 
-            drawTrack();
+                drawTrack();
 
-            ctx.restore();
+                // Dessiner toutes les voitures des joueurs connectés
+                for (let id in players) {
+                    drawCar(players[id].car);
+                }
 
-            drawCar();
+                ctx.restore();
+            }
 
-            document.getElementById('speedometer').innerText = `Vitesse: ${speedVal} km/h`;
             requestAnimationFrame(loop);
         }
 
