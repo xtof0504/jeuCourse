@@ -21,8 +21,14 @@ const wss = new WebSocket.Server({ server });
 const scale = 4;
 
 let gameState = {
-    car: { x: 500 * scale, y: 700 * scale, angle: Math.PI / 2, speed: 0 },
-    inputs: { left: false, right: false, accel: false, brake: false }
+    car: { x: (500 - 40) * scale, y: 700 * scale, angle: Math.PI / 2, speed: 0 },
+    inputs: { left: false, right: false, accel: false, brake: false },
+    race: {
+        startTime: null,
+        lastLapTime: 0,
+        bestTime: 0,
+        passedLineLastFrame: false
+    }
 };
 
 const constants = {
@@ -138,7 +144,42 @@ setInterval(() => {
     car.x += Math.sin(car.angle) * car.speed;
     car.y -= Math.cos(car.angle) * car.speed;
 
-    const payload = JSON.stringify({ type: 'state', car, speed: Math.round(Math.abs(car.speed) * 10), onTrack });
+    // Ligne de départ / arrivée (alignée sur le premier point du circuit de Monza)
+    let lineX = monzaPoints[0].x;
+    let lineY1 = monzaPoints[0].y - 150;
+    let lineY2 = monzaPoints[0].y + 150;
+
+    let crossingLine = (car.x >= lineX - 15 && car.x <= lineX + 15 && car.y >= lineY1 && car.y <= lineY2);
+
+    let race = gameState.race;
+    if (crossingLine && !race.passedLineLastFrame) {
+        let now = Date.now();
+        if (!race.startTime) {
+            race.startTime = now;
+        } else {
+            let lapDuration = (now - race.startTime) / 1000;
+            race.lastLapTime = lapDuration;
+            if (!race.bestTime || lapDuration < race.bestTime) {
+                race.bestTime = lapDuration;
+            }
+            race.startTime = now;
+        }
+        race.passedLineLastFrame = true;
+    } else if (!crossingLine) {
+        race.passedLineLastFrame = false;
+    }
+
+    let currentLapTime = race.startTime ? ((Date.now() - race.startTime) / 1000).toFixed(2) : '0.00';
+
+    const payload = JSON.stringify({
+        type: 'state',
+        car,
+        speed: Math.round(Math.abs(car.speed) * 10),
+        onTrack,
+        currentLapTime,
+        lastLapTime: race.lastLapTime ? race.lastLapTime.toFixed(2) : '--',
+        bestTime: race.bestTime ? race.bestTime.toFixed(2) : '--'
+    });
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(payload);
