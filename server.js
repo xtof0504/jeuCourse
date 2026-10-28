@@ -102,7 +102,13 @@ wss.on('connection', (ws) => {
         id: playerId,
         car: { x: startX, y: startY, angle: Math.PI / 2, speed: 0 },
         inputs: { left: false, right: false, accel: false, brake: false },
-        race: { startTime: null, lastLapTime: 0, bestTime: 0, passedLineLastFrame: false }
+        race: { 
+            startTime: null, 
+            lastLapTime: 0, 
+            bestTime: 0, 
+            passedLineLastFrame: false,
+            checkpointPassed: false // Requis : doit valider la moitié du circuit avant la ligne d'arrivée
+        }
     };
 
     ws.on('message', (message) => {
@@ -161,7 +167,7 @@ setInterval(() => {
         car.y -= Math.cos(car.angle) * car.speed;
     }
 
-    // 2. Gestion des collisions entre voitures (rebond / choc élastique simple)
+    // 2. Collisions entre voitures
     const playerIds = Object.keys(players);
     for (let i = 0; i < playerIds.length; i++) {
         for (let j = i + 1; j < playerIds.length; j++) {
@@ -173,21 +179,18 @@ setInterval(() => {
             let dx = c2.x - c1.x;
             let dy = c2.y - c1.y;
             let dist = Math.sqrt(dx * dx + dy * dy);
-            let minDist = (CAR_WIDTH / 2) + (CAR_WIDTH / 2); // Rayon de collision
+            let minDist = CAR_WIDTH;
 
             if (dist < minDist) {
-                // Collision détectée : échange partiel des vitesses et répulsion
                 let overlap = minDist - dist;
                 let nx = dx / dist;
                 let ny = dy / dist;
 
-                // Repousser les voitures pour éviter qu'elles ne se bloquent l'une dans l'autre
                 c1.x -= nx * overlap * 0.5;
                 c1.y -= ny * overlap * 0.5;
                 c2.x += nx * overlap * 0.5;
                 c2.y += ny * overlap * 0.5;
 
-                // Échange de vitesse (choc élastique amorti)
                 let tempSpeed = c1.speed;
                 c1.speed = c2.speed * 0.7;
                 c2.speed = tempSpeed * 0.7;
@@ -195,7 +198,7 @@ setInterval(() => {
         }
     }
 
-    // 3. Gestion des tours et du chronomètre
+    // 3. Gestion stricte des tours (Checkpoints + Ligne d'arrivée)
     for (let id in playerIds) {
         let p = players[playerIds[id]];
         let car = p.car;
@@ -205,19 +208,32 @@ setInterval(() => {
         let lineY1 = monzaPoints[0].y - 150;
         let lineY2 = monzaPoints[0].y + 150;
 
+        // Checkpoint situé à l'opposé du circuit (ex: autour du point 5 ou 6 de Monza)
+        let cpX = monzaPoints[5].x;
+        let cpY = monzaPoints[5].y;
+        let inCheckpoint = (Math.abs(car.x - cpX) < 400 && Math.abs(car.y - cpY) < 400);
+
+        if (inCheckpoint) {
+            race.checkpointPassed = true;
+        }
+
         let crossingLine = (car.x >= lineX - 15 && car.x <= lineX + 15 && car.y >= lineY1 && car.y <= lineY2);
 
         if (crossingLine && !race.passedLineLastFrame) {
             let now = Date.now();
             if (!race.startTime) {
+                // Premier départ
                 race.startTime = now;
-            } else {
+                race.checkpointPassed = false;
+            } else if (race.checkpointPassed) {
+                // Tour validé uniquement si le checkpoint de l'autre bout du circuit a été visité
                 let lapDuration = (now - race.startTime) / 1000;
                 race.lastLapTime = lapDuration;
                 if (!race.bestTime || lapDuration < race.bestTime) {
                     race.bestTime = lapDuration;
                 }
                 race.startTime = now;
+                race.checkpointPassed = false;
             }
             race.passedLineLastFrame = true;
         } else if (!crossingLine) {
@@ -238,5 +254,5 @@ setInterval(() => {
 }, 1000 / 60);
 
 server.listen(3000, () => {
-    console.log('Serveur multijoueur avec collisions démarré sur http://localhost:3000');
+    console.log('Serveur multijoueur (Anti-triche / Checkpoint) démarré sur http://localhost:3000');
 });
