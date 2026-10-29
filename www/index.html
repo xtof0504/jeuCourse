@@ -13,10 +13,15 @@
         .control-group { display: flex; gap: 15px; pointer-events: auto; }
         .btn { width: 80px; height: 80px; background: rgba(255, 255, 255, 0.3); border: 3px solid white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; color: white; touch-action: manipulation; }
         .btn:active, .btn.pressed { background: rgba(255, 255, 255, 0.7); transform: scale(0.95); }
-        #connectionScreen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
+        #connectionScreen, #roomScreen, #lobbyScreen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
         h1 { margin-bottom: 10px; font-size: 32px; color: #ffcc00; text-align: center; }
         input { padding: 12px; font-size: 18px; border-radius: 8px; border: none; margin-bottom: 20px; width: 80%; max-width: 300px; text-align: center; }
-        .menu-btn { padding: 15px 30px; font-size: 20px; font-weight: bold; background: #ffcc00; color: #111; border: none; border-radius: 30px; cursor: pointer; }
+        .menu-btn { padding: 15px 30px; font-size: 20px; font-weight: bold; background: #ffcc00; color: #111; border: none; border-radius: 30px; cursor: pointer; margin: 5px; }
+        .room-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 20px; }
+        .room-btn { padding: 20px; font-size: 16px; font-weight: bold; background: #333; color: white; border: 2px solid #ffcc00; border-radius: 10px; cursor: pointer; text-align: center; }
+        .room-btn:hover { background: #555; }
+        .player-list { margin: 20px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 10px; min-width: 250px; }
+        .player-list div { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
     </style>
 </head>
 <body>
@@ -43,13 +48,29 @@
         </div>
     </div>
 
+    <!-- Page de connexion -->
     <div id="connectionScreen">
-        <h1>MONZA MULTIJOUEUR (10 MAX)</h1>
+        <h1>MONZA MULTIJOUEUR</h1>
         <p>Entrez votre surnom :</p>
-        <input type="text" id="nicknameInput" value="Pilote" style="margin-bottom: 15px;">
-        <p>Entrez l'IP du serveur Windows (ex: 192.168.1.X:3000)</p>
-        <input type="text" id="serverIp" value="localhost:3000">
+        <input type="text" id="nicknameInput" value="Pilote">
         <button class="menu-btn" id="connectBtn">CONNEXION</button>
+    </div>
+
+    <!-- Choix de la salle -->
+    <div id="roomScreen" style="display: none;">
+        <h1>CHOIX DE LA SALLE</h1>
+        <p>Sélectionnez une salle d'attente (5 min max)</p>
+        <div class="room-grid" id="roomGrid"></div>
+    </div>
+
+    <!-- Salle d'attente -->
+    <div id="lobbyScreen" style="display: none;">
+        <h1>SALLE D'ATTENTE</h1>
+        <p id="lobbyRoomId">Salle 1</p>
+        <p id="lobbyTimer">Temps restant: 5:00</p>
+        <div class="player-list" id="lobbyPlayers"></div>
+        <button class="menu-btn" id="startGameBtn">DÉMARRER LA COURSE</button>
+        <button class="menu-btn" id="leaveRoomBtn" style="background: #e63946; color: white;">QUITTER LA SALLE</button>
     </div>
 
     <script>
@@ -68,8 +89,8 @@
         let players = {};
         let myId = null;
         let inputs = { left: false, right: false, accel: false, brake: false };
+        let currentRoom = null;
 
-        // Charger l'image de la Ferrari
         const carImg = new Image();
         carImg.src = 'ferrari.png';
         let imgLoaded = false;
@@ -109,25 +130,75 @@
             }
         }
 
+        // Page de connexion
         document.getElementById('connectBtn').addEventListener('click', () => {
-            const ip = document.getElementById('serverIp').value;
-            ws = new WebSocket(`ws://${ip}`);
+            ws = new WebSocket('ws://localhost:3000');
 
             ws.onopen = () => {
-                document.getElementById('connectionScreen').style.display = 'none';
-                document.getElementById('status').innerText = 'Statut: Connecté';
                 const nickname = document.getElementById('nicknameInput').value || 'Pilote';
                 ws.send(JSON.stringify({ type: 'join', nickname }));
+                
+                document.getElementById('connectionScreen').style.display = 'none';
+                document.getElementById('roomScreen').style.display = 'flex';
             };
 
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                if (data.type === 'state') {
+                
+                if (data.type === 'roomList') {
+                    // Mettre à jour l'affichage des salles
+                    const roomGrid = document.getElementById('roomGrid');
+                    roomGrid.innerHTML = '';
+                    data.rooms.forEach(room => {
+                        let btn = document.createElement('button');
+                        btn.className = 'room-btn';
+                        let playersText = room.players.length > 0 ? room.players.join(', ') : 'Vide';
+                        btn.innerHTML = `Salle ${room.id + 1}<br><small>${room.count}/10</small><br><small style="font-size:10px">${playersText}</small>`;
+                        btn.onclick = () => {
+                            ws.send(JSON.stringify({ type: 'joinRoom', roomId: room.id }));
+                            currentRoom = room.id;
+                            document.getElementById('roomScreen').style.display = 'none';
+                            document.getElementById('lobbyScreen').style.display = 'flex';
+                            document.getElementById('lobbyRoomId').innerText = `Salle ${room.id + 1}`;
+                        };
+                        if (room.raceStarted) {
+                            btn.style.opacity = '0.5';
+                            btn.style.cursor = 'not-allowed';
+                            btn.onclick = null;
+                        }
+                        roomGrid.appendChild(btn);
+                    });
+                } else if (data.type === 'lobby') {
+                    // Mise à jour de la salle d'attente
+                    document.getElementById('lobbyTimer').innerText = `Temps restant: ${Math.floor(data.timeLeft / 60)}:${(data.timeLeft % 60).toString().padStart(2, '0')}`;
+                    
+                    let playersHtml = '';
+                    if (data.players && data.players.length > 0) {
+                        data.players.forEach(p => {
+                            playersHtml += `<div>${p.nickname}</div>`;
+                        });
+                    } else {
+                        playersHtml = '<div>Aucun joueur</div>';
+                    }
+                    document.getElementById('lobbyPlayers').innerHTML = playersHtml;
+                    
+                    if (data.leaderboard && data.leaderboard.length > 0) {
+                        let lbHtml = '';
+                        data.leaderboard.forEach((entry, i) => {
+                            lbHtml += `<div>${i + 1}. ${entry.nickname} - ${entry.time.toFixed(2)}s</div>`;
+                        });
+                        document.getElementById('leaderboardList').innerHTML = lbHtml;
+                    }
+                } else                 if (data.type === 'state') {
+                    // Cacher l'écran de lobby si la course a démarré
+                    document.getElementById('lobbyScreen').style.display = 'none';
+                    document.getElementById('roomScreen').style.display = 'none';
+                    document.getElementById('connectionScreen').style.display = 'none';
+                    
                     players = data.players;
-                    // Déterminer notre propre ID si ce n'est pas fait (premier message ou auto-détection)
                     if (!myId) {
                         const ids = Object.keys(players);
-                        myId = ids[ids.length - 1]; // Le dernier connecté
+                        myId = ids[ids.length - 1];
                     }
 
                     if (myId && players[myId]) {
@@ -142,7 +213,6 @@
                         }
                     }
 
-                    // Affichage du leaderboard
                     if (data.leaderboard && data.leaderboard.length > 0) {
                         let lbHtml = '';
                         data.leaderboard.forEach((entry, i) => {
@@ -152,13 +222,35 @@
                     }
                 } else if (data.type === 'error') {
                     alert(data.message);
+                } else if (data.type === 'joinedRoom') {
+                    // Salle rejointe
                 }
             };
 
             ws.onclose = () => {
                 document.getElementById('status').innerText = 'Statut: Déconnecté';
                 document.getElementById('connectionScreen').style.display = 'flex';
+                document.getElementById('roomScreen').style.display = 'none';
+                document.getElementById('lobbyScreen').style.display = 'none';
             };
+        });
+
+        // Bouton démarrer la course
+        document.getElementById('startGameBtn').addEventListener('click', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'startGame' }));
+                document.getElementById('lobbyScreen').style.display = 'none';
+            }
+        });
+
+        // Bouton quitter la salle
+        document.getElementById('leaveRoomBtn').addEventListener('click', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'leaveRoom' }));
+                currentRoom = null;
+                document.getElementById('lobbyScreen').style.display = 'none';
+                document.getElementById('roomScreen').style.display = 'flex';
+            }
         });
 
         const baseMonzaPoints = [
@@ -222,8 +314,7 @@
                 ctx.fillRect(-30, -56, 60, 112);
             }
 
-            // Affichage du surnom au-dessus de la voiture
-            ctx.rotate(-car.angle); // Remettre le texte à l'horizontale
+            ctx.rotate(-car.angle);
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 14px Arial';
             ctx.textAlign = 'center';
@@ -238,12 +329,10 @@
             if (myId && players[myId]) {
                 let me = players[myId];
                 ctx.save();
-                // Caméra centrée sur notre propre voiture
                 ctx.translate(canvas.width / 2 - me.car.x, canvas.height / 2 - me.car.y);
 
                 drawTrack();
 
-                // Dessiner toutes les voitures des joueurs connectés
                 for (let id in players) {
                     drawCar(players[id]);
                 }
