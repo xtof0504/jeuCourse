@@ -114,6 +114,9 @@ wss.on('connection', (ws) => {
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
+            if (data.type === 'join' && players[playerId]) {
+                players[playerId].nickname = data.nickname || ('Pilote ' + playerId.substr(-4));
+            }
             if (data.type === 'input' && players[playerId]) {
                 players[playerId].inputs = data.inputs;
             }
