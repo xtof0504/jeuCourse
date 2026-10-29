@@ -153,7 +153,12 @@
                         let btn = document.createElement('button');
                         btn.className = 'room-btn';
                         let playersText = room.players.length > 0 ? room.players.join(', ') : 'Vide';
-                        btn.innerHTML = `Salle ${room.id + 1}<br><small>${room.count}/10</small><br><small style="font-size:10px">${playersText}</small>`;
+                        let statusColor = room.status === 'en course' ? '#e63946' : (room.status === 'en attente' ? '#ffcc00' : '#888');
+                        let timeText = '';
+                        if (room.status === 'en attente') {
+                            timeText = `<br><small style="color:#ffcc00">${Math.floor(room.timeLeft / 60)}:${(room.timeLeft % 60).toString().padStart(2, '0')}</small>`;
+                        }
+                        btn.innerHTML = `Salle ${room.id + 1}<br><small style="color:${statusColor}">${room.status.toUpperCase()}</small>${timeText}<br><small>${room.count}/10</small><br><small style="font-size:10px">${playersText}</small>`;
                         btn.onclick = () => {
                             ws.send(JSON.stringify({ type: 'joinRoom', roomId: room.id }));
                             currentRoom = room.id;

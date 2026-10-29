@@ -375,11 +375,20 @@ setInterval(() => {
     for (let i = 0; i < ROOM_COUNT; i++) {
         let room = rooms[i];
         let players = Object.values(room.players).map(p => p.nickname || 'Pilote');
+        let status = 'vide';
+        if (room.raceStarted) {
+            status = 'en course';
+        } else if (players.length > 0) {
+            status = 'en attente';
+        }
+        let timeLeft = room.startTime ? Math.max(0, ROOM_TIMEOUT - (Date.now() - room.startTime)) : ROOM_TIMEOUT;
         roomList.push({
             id: i,
             count: players.length,
             players: players,
-            raceStarted: room.raceStarted
+            raceStarted: room.raceStarted,
+            status: status,
+            timeLeft: Math.ceil(timeLeft / 1000)
         });
     }
     
