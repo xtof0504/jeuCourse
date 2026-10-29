@@ -24,6 +24,7 @@ const CAR_WIDTH = 60;
 const CAR_HEIGHT = 112;
 
 let players = {};
+let leaderboard = []; // Top 10 meilleurs temps : [{ nickname, time }]
 
 const constants = {
     maxSpeed: 20,
@@ -237,6 +238,14 @@ setInterval(() => {
                 }
                 race.startTime = now;
                 race.checkpointPassed = false;
+
+                // Ajout au leaderboard global (top 10)
+                let nickname = p.nickname || 'Pilote';
+                leaderboard.push({ nickname, time: lapDuration });
+                leaderboard.sort((a, b) => a.time - b.time);
+                if (leaderboard.length > 10) {
+                    leaderboard = leaderboard.slice(0, 10);
+                }
             }
             race.passedLineLastFrame = true;
         } else if (!crossingLine) {
@@ -248,7 +257,7 @@ setInterval(() => {
         p.speedKmh = Math.round(Math.abs(car.speed) * 10);
     }
 
-    const payload = JSON.stringify({ type: 'state', players });
+    const payload = JSON.stringify({ type: 'state', players, leaderboard });
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(payload);

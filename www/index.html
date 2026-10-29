@@ -23,6 +23,10 @@
     <div id="ui">
         <div id="speedometer">Vitesse: 0 km/h</div>
         <div id="chrono" style="font-size: 14px; text-align: center;">Tour: 0.00s<br>Dernier: -- | Meilleur: --</div>
+        <div id="leaderboard" style="font-size: 14px; text-align: center;">
+            <div style="font-weight: bold; margin-bottom: 5px;">TOP 10</div>
+            <div id="leaderboardList">En attente...</div>
+        </div>
         <div id="status">Statut: Déconnecté</div>
     </div>
 
@@ -136,6 +140,15 @@
                         } else {
                             document.getElementById('speedometer').style.color = '#e63946';
                         }
+                    }
+
+                    // Affichage du leaderboard
+                    if (data.leaderboard && data.leaderboard.length > 0) {
+                        let lbHtml = '';
+                        data.leaderboard.forEach((entry, i) => {
+                            lbHtml += `<div>${i + 1}. ${entry.nickname} - ${entry.time.toFixed(2)}s</div>`;
+                        });
+                        document.getElementById('leaderboardList').innerHTML = lbHtml;
                     }
                 } else if (data.type === 'error') {
                     alert(data.message);
