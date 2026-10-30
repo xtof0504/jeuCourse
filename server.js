@@ -177,7 +177,7 @@ wss.on('connection', (ws) => {
                     }, ROOM_TIMEOUT);
                 }
                 
-                ws.send(JSON.stringify({ type: 'joinedRoom', roomId, playerCount: Object.keys(room.players).length }));
+                ws.send(JSON.stringify({ type: 'joinedRoom', roomId, playerId, playerCount: Object.keys(room.players).length }));
             }
             
             if (data.type === 'startGame') {

@@ -201,6 +201,9 @@
                     document.getElementById('connectionScreen').style.display = 'none';
                     
                     players = data.players;
+                    if (!myId && data.playerId) {
+                        myId = data.playerId;
+                    }
                     if (!myId) {
                         const ids = Object.keys(players);
                         myId = ids[ids.length - 1];
@@ -228,7 +231,7 @@
                 } else if (data.type === 'error') {
                     alert(data.message);
                 } else if (data.type === 'joinedRoom') {
-                    // Salle rejointe
+                    if (data.playerId) myId = data.playerId;
                 }
             };
 
