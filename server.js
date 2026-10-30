@@ -171,6 +171,7 @@ wss.on('connection', (ws) => {
 
     let currentRoom = null;
     let nickname = 'Pilote';
+    let carImage = 'ferrari.png';
 
     ws.on('message', (message) => {
         try {
@@ -178,6 +179,7 @@ wss.on('connection', (ws) => {
             
             if (data.type === 'join') {
                 nickname = data.nickname || 'Pilote';
+                if (data.car) carImage = data.car;
             }
             
             if (data.type === 'joinRoom') {
@@ -204,6 +206,7 @@ wss.on('connection', (ws) => {
                 room.players[playerId] = {
                     id: playerId,
                     nickname: nickname,
+                    carImage: carImage,
                     car: { x: startX, y: startY, angle: Math.PI / 2, speed: 0 },
                     inputs: { left: false, right: false, accel: false, brake: false },
                     race: { 

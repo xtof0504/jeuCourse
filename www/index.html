@@ -52,6 +52,8 @@
         <h1>MONZA MULTIJOUEUR</h1>
         <p>Entrez votre surnom :</p>
         <input type="text" id="nicknameInput" value="Pilote">
+        <p>Choisissez votre voiture :</p>
+        <select id="carSelect" style="padding:10px;font-size:16px;margin-bottom:20px;border-radius:8px;"></select>
         <button class="menu-btn" id="connectBtn">CONNEXION</button>
     </div>
 
@@ -91,9 +93,25 @@
         let currentRoom = null;
 
         const carImg = new Image();
-        carImg.src = 'ferrari.png';
+        carImg.src = 'cars/ferrari.png';
         let imgLoaded = false;
         carImg.onload = () => { imgLoaded = true; };
+
+        const carOptions = ['alpine.png','AstonMartin.png','audi.png','Cadillac.png','ferrari.png','Hass.png','MacLaren.png','mercedez.png','racingBull.png','redbull.png','Williams.png'];
+        const carImages = {};
+        carOptions.forEach(name => {
+            const img = new Image();
+            img.src = 'cars/' + name;
+            carImages[name] = img;
+        });
+        const carSelect = document.getElementById('carSelect');
+        carOptions.forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name.replace('.png', '');
+            carSelect.appendChild(opt);
+        });
+        carSelect.value = 'ferrari.png';
 
         function bindButton(id, keyName) {
             const el = document.getElementById(id);
@@ -135,7 +153,8 @@
 
             ws.onopen = () => {
                 const nickname = document.getElementById('nicknameInput').value || 'Pilote';
-                ws.send(JSON.stringify({ type: 'join', nickname }));
+                const car = document.getElementById('carSelect').value || 'ferrari.png';
+                ws.send(JSON.stringify({ type: 'join', nickname, car }));
                 
                 document.getElementById('connectionScreen').style.display = 'none';
                 document.getElementById('roomScreen').style.display = 'flex';
@@ -334,12 +353,14 @@
 
         function drawCar(p) {
             let car = p.car;
+            let carImageName = p.carImage || 'ferrari.png';
+            let img = carImages[carImageName];
             ctx.save();
             ctx.translate(car.x, car.y);
             ctx.rotate(car.angle);
 
-            if (imgLoaded) {
-                ctx.drawImage(carImg, -20, -56, 40, 112);
+            if (img && img.complete && img.naturalWidth > 0) {
+                ctx.drawImage(img, -20, -56, 40, 112);
             } else {
                 ctx.fillStyle = '#cc0000';
                 ctx.fillRect(-20, -56, 40, 112);
