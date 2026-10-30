@@ -29,15 +29,12 @@
         <div id="speedometer">Vitesse: 0 km/h</div>
         <div id="chrono" style="font-size: 14px; text-align: center;">Tour: 0.00s<br>Dernier: -- | Meilleur: --</div>
         <div id="leaderboard" style="font-size: 14px; text-align: center;">
-            <div style="font-weight: bold; margin-bottom: 5px;">TOP 10</div>
             <div id="leaderboardList">En attente...</div>
         </div>
         <div id="status">Statut: Déconnecté</div>
     </div>
 
     <canvas id="gameCanvas"></canvas>
-
-    <div id="qualifTable" style="position:absolute;top:60px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);padding:10px 16px;border-radius:8px;z-index:5;display:none;min-width:220px;text-align:center;"></div>
 
     <div id="controls">
         <div class="control-group">
@@ -242,19 +239,20 @@
                         document.getElementById('leaderboardList').innerHTML = lbHtml;
                     }
 
-                    let qualifTable = document.getElementById('qualifTable');
+                    let statusEl = document.getElementById('status');
                     if (data.phase === 'qualif') {
-                        let html = '<div style="font-weight:bold;margin-bottom:6px;">Qualification - Tous les participants</div>';
+                        let html = '<div style="font-weight:bold;margin-bottom:6px;">Qualification</div>';
                         html += '<table style="width:100%;border-collapse:collapse;font-size:14px;"><tr><th style="text-align:left;padding:2px 6px;">Joueur</th><th style="text-align:right;padding:2px 6px;">Meilleur</th></tr>';
                         let arr = Object.values(players).sort((a, b) => (a.race.bestTime || Infinity) - (b.race.bestTime || Infinity));
                         arr.forEach(p => {
                             html += `<tr><td style="text-align:left;padding:2px 6px;">${p.nickname || 'Pilote'}</td><td style="text-align:right;padding:2px 6px;">${p.race.bestTime ? p.race.bestTime.toFixed(2) + 's' : '--'}</td></tr>`;
                         });
                         html += '</table>';
-                        qualifTable.innerHTML = html;
-                        qualifTable.style.display = 'block';
+                        statusEl.innerHTML = html;
                     } else {
-                        qualifTable.style.display = 'none';
+                        if (statusEl.innerHTML.includes('<table')) {
+                            statusEl.innerText = 'Statut: En course';
+                        }
                     }
                 } else if (data.type === 'error') {
                     alert(data.message);
