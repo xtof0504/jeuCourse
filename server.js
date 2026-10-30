@@ -123,6 +123,47 @@ function isOnTrack(x, y) {
     return false;
 }
 
+function projectRect(cx, cy, angle, halfW, halfH, axis) {
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const ax = { x: cos, y: sin };
+    const ay = { x: -sin, y: cos };
+    const r = halfW * Math.abs(ax.x * axis.x + ax.y * axis.y) + halfH * Math.abs(ay.x * axis.x + ay.y * axis.y);
+    const c = cx * axis.x + cy * axis.y;
+    return { min: c - r, max: c + r };
+}
+
+function collideOBB(c1, a1, c2, a2) {
+    const halfW = CAR_HEIGHT / 2;
+    const halfH = CAR_WIDTH / 2;
+    const axes = [
+        { x: Math.cos(a1), y: Math.sin(a1) },
+        { x: -Math.sin(a1), y: Math.cos(a1) },
+        { x: Math.cos(a2), y: Math.sin(a2) },
+        { x: -Math.sin(a2), y: Math.cos(a2) }
+    ];
+
+    let minOverlap = Infinity;
+    let mtvAxis = null;
+    for (const axis of axes) {
+        const p1 = projectRect(c1.x, c1.y, a1, halfW, halfH, axis);
+        const p2 = projectRect(c2.x, c2.y, a2, halfW, halfH, axis);
+        const overlap = Math.min(p1.max, p2.max) - Math.max(p1.min, p2.min);
+        if (overlap <= 0) return null;
+        if (overlap < minOverlap) {
+            minOverlap = overlap;
+            mtvAxis = axis;
+        }
+    }
+
+    const dx = c2.x - c1.x;
+    const dy = c2.y - c1.y;
+    if (dx * mtvAxis.x + dy * mtvAxis.y < 0) {
+        mtvAxis = { x: -mtvAxis.x, y: -mtvAxis.y };
+    }
+    return { overlap: minOverlap, nx: mtvAxis.x, ny: mtvAxis.y };
+}
+
 wss.on('connection', (ws) => {
     const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
     console.log(`Joueur connecté : ${playerId}`);
@@ -350,9 +391,9 @@ setInterval(() => {
                 let dx = c2.x - c1.x;
                 let dy = c2.y - c1.y;
                 let dist = Math.sqrt(dx * dx + dy * dy);
-                let minDist = CAR_WIDTH;
+                let minDist = CAR_WIDTH / 2;
 
-                if (dist < minDist) {
+                if (dist < minDist && dist > 0) {
                     let overlap = minDist - dist;
                     let nx = dx / dist;
                     let ny = dy / dist;
@@ -416,13 +457,16 @@ setInterval(() => {
                     }
 
                     let nickname = p.nickname || 'Pilote';
-                    let existing = leaderboard.find(e => e.nickname === nickname);
+                    let playerId = p.id || id;
+                    let existing = leaderboard.find(e => (e.id && e.id === playerId) || (!e.id && e.nickname === nickname));
                     if (existing) {
                         if (lapDuration < existing.time) {
                             existing.time = lapDuration;
+                            existing.nickname = nickname;
+                            existing.id = playerId;
                         }
                     } else {
-                        leaderboard.push({ nickname, time: lapDuration });
+                        leaderboard.push({ id: playerId, nickname, time: lapDuration });
                     }
                     leaderboard.sort((a, b) => a.time - b.time);
                     if (leaderboard.length > 10) {

@@ -339,21 +339,20 @@
             ctx.rotate(car.angle);
 
             if (imgLoaded) {
-                ctx.save();
-                ctx.rotate(-Math.PI / 2);
-                ctx.drawImage(carImg, -56, -30, 112, 60);
-                ctx.restore();
+                ctx.drawImage(carImg, -20, -56, 40, 112);
             } else {
                 ctx.fillStyle = '#cc0000';
-                ctx.fillRect(-30, -56, 60, 112);
+                ctx.fillRect(-20, -56, 40, 112);
             }
 
-            ctx.rotate(-car.angle);
+            ctx.restore();
+
+            ctx.save();
+            ctx.translate(car.x, car.y - 35);
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 14px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText(p.nickname || 'Pilote', 0, -45);
-
+            ctx.fillText(p.nickname || 'Pilote', 0, 0);
             ctx.restore();
         }
 
