@@ -51,9 +51,15 @@ for (let i = 0; i < ROOM_COUNT; i++) {
     rooms[i] = {
         id: i,
         players: {},
+        phase: 'lobby', // lobby, qualif, race, finished
         started: false,
         raceStarted: false,
         startTime: null,
+        qualifStartTime: null,
+        qualifDuration: 5 * 60 * 1000,
+        raceStartTime: null,
+        targetLaps: 10,
+        winner: null,
         timer: null
     };
 }
@@ -164,7 +170,10 @@ wss.on('connection', (ws) => {
                         lastLapTime: 0, 
                         bestTime: 0, 
                         passedLineLastFrame: false,
-                        checkpointPassed: false
+                        checkpointPassed: false,
+                        laps: 0,
+                        finished: false,
+                        finishTime: null
                     }
                 };
                 
@@ -183,15 +192,30 @@ wss.on('connection', (ws) => {
             if (data.type === 'startGame') {
                 if (currentRoom !== null && rooms[currentRoom]) {
                     let room = rooms[currentRoom];
-                    if (!room.raceStarted) {
+                    if (room.phase === 'lobby') {
+                        room.phase = 'qualif';
                         room.raceStarted = true;
                         room.started = true;
+                        room.qualifStartTime = Date.now();
                         if (room.timer) {
                             clearTimeout(room.timer);
                             room.timer = null;
                         }
                         for (let pid in room.players) {
-                            room.players[pid].race.startTime = Date.now();
+                            let p = room.players[pid];
+                            p.race.startTime = Date.now();
+                            p.race.laps = 0;
+                            p.race.finished = false;
+                            p.race.finishTime = null;
+                            p.race.bestTime = 0;
+                            p.race.passedLineLastFrame = false;
+                            p.race.checkpointPassed = false;
+                            // reset position
+                            const idx = Object.keys(room.players).indexOf(pid);
+                            p.car.x = (500 - 40 - (idx * 20)) * scale;
+                            p.car.y = 700 * scale;
+                            p.car.angle = Math.PI / 2;
+                            p.car.speed = 0;
                         }
                     }
                 }
@@ -199,9 +223,20 @@ wss.on('connection', (ws) => {
             
             if (data.type === 'leaveRoom') {
                 if (currentRoom !== null && rooms[currentRoom]) {
-                    delete rooms[currentRoom].players[playerId];
+                    let roomId = currentRoom;
+                    delete rooms[roomId].players[playerId];
                     currentRoom = null;
                     playerRoom[playerId] = null;
+                    if (Object.keys(rooms[roomId].players).length === 0) {
+                        rooms[roomId].phase = 'lobby';
+                        rooms[roomId].started = false;
+                        rooms[roomId].raceStarted = false;
+                        rooms[roomId].startTime = null;
+                        rooms[roomId].qualifStartTime = null;
+                        rooms[roomId].raceStartTime = null;
+                        rooms[roomId].winner = null;
+                        rooms[roomId].timer = null;
+                    }
                 }
             }
             
@@ -214,7 +249,18 @@ wss.on('connection', (ws) => {
     ws.on('close', () => {
         console.log(`Joueur déconnecté : ${playerId}`);
         if (currentRoom !== null && rooms[currentRoom]) {
-            delete rooms[currentRoom].players[playerId];
+            let roomId = currentRoom;
+            delete rooms[roomId].players[playerId];
+            if (Object.keys(rooms[roomId].players).length === 0) {
+                rooms[roomId].phase = 'lobby';
+                rooms[roomId].started = false;
+                rooms[roomId].raceStarted = false;
+                rooms[roomId].startTime = null;
+                rooms[roomId].qualifStartTime = null;
+                rooms[roomId].raceStartTime = null;
+                rooms[roomId].winner = null;
+                rooms[roomId].timer = null;
+            }
         }
         delete playerWs[playerId];
         delete playerRoom[playerId];
@@ -227,6 +273,29 @@ setInterval(() => {
         let room = rooms[roomId];
         if (!room.raceStarted) continue;
         
+        // Transition qualification -> course après 5 minutes
+        if (room.phase === 'qualif' && (Date.now() - room.qualifStartTime) >= room.qualifDuration) {
+            // grilles de départ selon meilleurs temps de qualif
+            let sorted = Object.values(room.players).sort((a, b) => {
+                let ta = a.race.bestTime || Infinity;
+                let tb = b.race.bestTime || Infinity;
+                return ta - tb;
+            });
+            sorted.forEach((p, idx) => {
+                p.car.x = (500 - 40 - (idx * 20)) * scale;
+                p.car.y = 700 * scale;
+                p.car.angle = Math.PI / 2;
+                p.car.speed = 0;
+                p.race.laps = 0;
+                p.race.finished = false;
+                p.race.finishTime = null;
+                p.race.passedLineLastFrame = false;
+                p.race.checkpointPassed = false;
+                p.race.startTime = Date.now();
+            });
+            room.phase = 'race';
+            room.raceStartTime = Date.now();
+        }
         let players = room.players;
         let playerIds = Object.keys(players);
         
@@ -334,6 +403,18 @@ setInterval(() => {
                     race.startTime = now;
                     race.checkpointPassed = false;
 
+                    if (room.phase === 'race' && !race.finished) {
+                        race.laps = (race.laps || 0) + 1;
+                        if (race.laps >= room.targetLaps) {
+                            race.finished = true;
+                            race.finishTime = now;
+                            if (!room.winner) {
+                                room.winner = p.nickname || 'Pilote';
+                                room.phase = 'finished';
+                            }
+                        }
+                    }
+
                     let nickname = p.nickname || 'Pilote';
                     let existing = leaderboard.find(e => e.nickname === nickname);
                     if (existing) {
@@ -360,7 +441,9 @@ setInterval(() => {
         }
 
         // Diffuser l'état de cette salle aux joueurs de cette salle
-        const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted });
+        const qualifTimeLeft = room.phase === 'qualif' ? Math.max(0, room.qualifDuration - (Date.now() - room.qualifStartTime)) : 0;
+        const raceTimeLeft = room.phase === 'race' ? (Date.now() - room.raceStartTime) : 0;
+        const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, targetLaps: room.targetLaps, winner: room.winner });
         for (let pid of playerIds) {
             if (playerWs[pid] && playerWs[pid].readyState === WebSocket.OPEN) {
                 playerWs[pid].send(payload);

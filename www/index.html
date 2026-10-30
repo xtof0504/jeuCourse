@@ -37,6 +37,8 @@
 
     <canvas id="gameCanvas"></canvas>
 
+    <div id="qualifTable" style="position:absolute;top:60px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);padding:10px 16px;border-radius:8px;z-index:5;display:none;min-width:220px;text-align:center;"></div>
+
     <div id="controls">
         <div class="control-group">
             <div class="btn" id="leftBtn">◀</div>
@@ -212,7 +214,18 @@
                     if (myId && players[myId]) {
                         let me = players[myId];
                         document.getElementById('speedometer').innerText = `Vitesse: ${me.speedKmh} km/h`;
-                        document.getElementById('chrono').innerHTML = `Tour: ${me.currentLapTime}s<br>Dernier: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s | Meilleur: ${me.race.bestTime ? me.race.bestTime.toFixed(2) : '--'}s`;
+                        
+                        if (data.phase === 'qualif') {
+                            let mins = Math.floor(data.qualifTimeLeft / 60000);
+                            let secs = Math.floor((data.qualifTimeLeft % 60000) / 1000);
+                            document.getElementById('chrono').innerHTML = `QUALIFICATION<br>Temps restant: ${mins}:${secs.toString().padStart(2,'0')}<br>Meilleur: ${me.race.bestTime ? me.race.bestTime.toFixed(2) : '--'}s`;
+                        } else if (data.phase === 'race') {
+                            document.getElementById('chrono').innerHTML = `COURSE<br>Tour: ${me.race.laps || 0} / ${data.targetLaps}<br>Dernier: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s | Meilleur: ${me.race.bestTime ? me.race.bestTime.toFixed(2) : '--'}s`;
+                        } else if (data.phase === 'finished') {
+                            document.getElementById('chrono').innerHTML = `TERMINE<br>Vainqueur: ${data.winner || '--'}<br>Tour: ${me.race.laps || 0} / ${data.targetLaps}`;
+                        } else {
+                            document.getElementById('chrono').innerHTML = `Tour: ${me.currentLapTime}s<br>Dernier: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s | Meilleur: ${me.race.bestTime ? me.race.bestTime.toFixed(2) : '--'}s`;
+                        }
                         
                         if (me.onTrack) {
                             document.getElementById('speedometer').style.color = '#fff';
@@ -222,11 +235,26 @@
                     }
 
                     if (data.leaderboard && data.leaderboard.length > 0) {
-                        let lbHtml = '';
+                        let lbHtml = '<div style="font-weight:bold;margin-bottom:5px;">TOP 10</div>';
                         data.leaderboard.forEach((entry, i) => {
                             lbHtml += `<div>${i + 1}. ${entry.nickname} - ${entry.time.toFixed(2)}s</div>`;
                         });
                         document.getElementById('leaderboardList').innerHTML = lbHtml;
+                    }
+
+                    let qualifTable = document.getElementById('qualifTable');
+                    if (data.phase === 'qualif') {
+                        let html = '<div style="font-weight:bold;margin-bottom:6px;">Qualification - Tous les participants</div>';
+                        html += '<table style="width:100%;border-collapse:collapse;font-size:14px;"><tr><th style="text-align:left;padding:2px 6px;">Joueur</th><th style="text-align:right;padding:2px 6px;">Meilleur</th></tr>';
+                        let arr = Object.values(players).sort((a, b) => (a.race.bestTime || Infinity) - (b.race.bestTime || Infinity));
+                        arr.forEach(p => {
+                            html += `<tr><td style="text-align:left;padding:2px 6px;">${p.nickname || 'Pilote'}</td><td style="text-align:right;padding:2px 6px;">${p.race.bestTime ? p.race.bestTime.toFixed(2) + 's' : '--'}</td></tr>`;
+                        });
+                        html += '</table>';
+                        qualifTable.innerHTML = html;
+                        qualifTable.style.display = 'block';
+                    } else {
+                        qualifTable.style.display = 'none';
                     }
                 } else if (data.type === 'error') {
                     alert(data.message);
