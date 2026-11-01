@@ -43,6 +43,11 @@ function saveLeaderboard() {
     } catch (e) {}
 }
 
+const tracksData = JSON.parse(fs.readFileSync(path.join(__dirname, 'www', 'tracks.json'), 'utf8'));
+const DEFAULT_TRACK = tracksData['Italian Grand Prix'];
+function getRoadWidth(circuit) {
+    return circuit === 'Monaco Grand Prix' ? 123 : 300;
+}
 let rooms = {};
 let playerWs = {}; // playerId -> ws
 let playerRoom = {}; // playerId -> roomId
@@ -55,6 +60,9 @@ for (let i = 0; i < ROOM_COUNT; i++) {
         started: false,
         raceStarted: false,
         startTime: null,
+        circuit: 'Italian Grand Prix',
+        trackPoints: DEFAULT_TRACK,
+        roadWidth: 300,
         qualifStartTime: null,
         qualifDuration: 5 * 60 * 1000,
         raceStartTime: null,
@@ -73,22 +81,15 @@ const constants = {
     turnSpeed: 0.045
 };
 
-const baseMonzaPoints = [
-    {x: 500, y: 700}, {x: 1200, y: 700}, {x: 1500, y: 600}, 
-    {x: 1600, y: 300}, {x: 1300, y: 150}, {x: 900, y: 150},
-    {x: 700, y: 250}, {x: 500, y: 350}, {x: 300, y: 250},
-    {x: 200, y: 400}, {x: 200, y: 600}
-];
+function isOnTrack(x, y, points, roadWidth) {
+    const pts = points || DEFAULT_TRACK;
+    const rw = roadWidth || 300;
+    const roadWidthVal = rw;
+    const halfWidth = roadWidthVal / 2;
 
-const monzaPoints = baseMonzaPoints.map(p => ({ x: p.x * scale, y: p.y * scale }));
-
-function isOnTrack(x, y) {
-    const roadWidth = 300;
-    const halfWidth = roadWidth / 2;
-
-    for (let i = 0; i < monzaPoints.length; i++) {
-        let p1 = monzaPoints[i];
-        let p2 = monzaPoints[(i + 1) % monzaPoints.length];
+    for (let i = 0; i < pts.length; i++) {
+        let p1 = pts[i];
+        let p2 = pts[(i + 1) % pts.length];
 
         let A = x - p1.x;
         let B = y - p1.y;
@@ -200,14 +201,23 @@ wss.on('connection', (ws) => {
                     return;
                 }
                 
-                const startX = (500 - 40 - (playerCount * 20)) * scale;
-                const startY = 700 * scale;
+                const tp = room.trackPoints || DEFAULT_TRACK;
+                const p0 = tp[0];
+                const p1 = tp[1] || tp[0];
+                const dx = p1.x - p0.x;
+                const dy = p1.y - p0.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const nx = -dy / len;
+                const ny = dx / len;
+                const startX = p0.x + nx * (playerCount * 20 - 40);
+                const startY = p0.y + ny * (playerCount * 20 - 40);
+                const startAngle = Math.atan2(dx, -dy); // adjust? car angle 0 points up, movement (sin, -cos). For direction (dx,dy), angle = atan2(dx, -dy). Good.
                 
                 room.players[playerId] = {
                     id: playerId,
                     nickname: nickname,
                     carImage: carImage,
-                    car: { x: startX, y: startY, angle: Math.PI / 2, speed: 0 },
+                    car: { x: startX, y: startY, angle: startAngle, speed: 0 },
                     inputs: { left: false, right: false, accel: false, brake: false },
                     race: { 
                         startTime: null, 
@@ -256,9 +266,17 @@ wss.on('connection', (ws) => {
                             p.race.checkpointPassed = false;
                             // reset position
                             const idx = Object.keys(room.players).indexOf(pid);
-                            p.car.x = (500 - 40 - (idx * 20)) * scale;
-                            p.car.y = 700 * scale;
-                            p.car.angle = Math.PI / 2;
+                            const tp = room.trackPoints || DEFAULT_TRACK;
+                            const p0 = tp[0];
+                            const p1 = tp[1] || tp[0];
+                            const dx = p1.x - p0.x;
+                            const dy = p1.y - p0.y;
+                            const len = Math.hypot(dx, dy) || 1;
+                            const nx = -dy / len;
+                            const ny = dx / len;
+                            p.car.x = p0.x + nx * (idx * 20 - 40);
+                            p.car.y = p0.y + ny * (idx * 20 - 40);
+                            p.car.angle = Math.atan2(dx, -dy);
                             p.car.speed = 0;
                         }
                     }
@@ -279,8 +297,20 @@ wss.on('connection', (ws) => {
                         rooms[roomId].qualifStartTime = null;
                         rooms[roomId].raceStartTime = null;
                         rooms[roomId].winner = null;
+                        rooms[roomId].circuit = 'Italian Grand Prix';
+                        rooms[roomId].trackPoints = DEFAULT_TRACK;
+                        rooms[roomId].roadWidth = 300;
                         rooms[roomId].timer = null;
                     }
+                }
+            }
+            
+            if (data.type === 'selectCircuit' && currentRoom !== null && rooms[currentRoom]) {
+                let room = rooms[currentRoom];
+                if (room.phase === 'lobby') {
+                    room.circuit = data.circuit || room.circuit;
+                    room.trackPoints = tracksData[room.circuit] || DEFAULT_TRACK;
+                    room.roadWidth = getRoadWidth(room.circuit);
                 }
             }
             
@@ -303,6 +333,9 @@ wss.on('connection', (ws) => {
                 rooms[roomId].qualifStartTime = null;
                 rooms[roomId].raceStartTime = null;
                 rooms[roomId].winner = null;
+                rooms[roomId].circuit = 'Italian Grand Prix';
+                rooms[roomId].trackPoints = DEFAULT_TRACK;
+                rooms[roomId].roadWidth = 300;
                 rooms[roomId].timer = null;
             }
         }
@@ -326,9 +359,17 @@ setInterval(() => {
                 return ta - tb;
             });
             sorted.forEach((p, idx) => {
-                p.car.x = (500 - 40 - (idx * 20)) * scale;
-                p.car.y = 700 * scale;
-                p.car.angle = Math.PI / 2;
+                const tp = room.trackPoints || DEFAULT_TRACK;
+                const p0 = tp[0];
+                const p1 = tp[1] || tp[0];
+                const dx = p1.x - p0.x;
+                const dy = p1.y - p0.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const nx = -dy / len;
+                const ny = dx / len;
+                p.car.x = p0.x + nx * (idx * 20 - 40);
+                p.car.y = p0.y + ny * (idx * 20 - 40);
+                p.car.angle = Math.atan2(dx, -dy);
                 p.car.speed = 0;
                 p.race.laps = 0;
                 p.race.finished = false;
@@ -341,6 +382,7 @@ setInterval(() => {
             room.raceStartTime = Date.now();
         }
         let players = room.players;
+        let trackPts = room.trackPoints || DEFAULT_TRACK;
         let playerIds = Object.keys(players);
         
         // 1. Mouvement
@@ -349,7 +391,7 @@ setInterval(() => {
             let car = p.car;
             let inputs = p.inputs;
 
-            let onTrack = isOnTrack(car.x, car.y);
+            let onTrack = isOnTrack(car.x, car.y, trackPts, room.roadWidth);
             let currentMaxSpeed = onTrack ? constants.maxSpeed : (constants.maxSpeed / 5);
 
             if (inputs.left) {
@@ -419,19 +461,27 @@ setInterval(() => {
             let car = p.car;
             let race = p.race;
 
-            let lineX = monzaPoints[0].x;
-            let lineY1 = monzaPoints[0].y - 150;
-            let lineY2 = monzaPoints[0].y + 150;
+            const p0 = trackPts[0];
+            const p1 = trackPts[1] || trackPts[0];
+            const dx = p1.x - p0.x;
+            const dy = p1.y - p0.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ndx = dx / len;
+            const ndy = dy / len;
+            const nx = -ndy;
+            const ny = ndx;
 
-            let cpX = monzaPoints[5].x;
-            let cpY = monzaPoints[5].y;
+            let cpX = trackPts[Math.floor(trackPts.length / 2)].x;
+            let cpY = trackPts[Math.floor(trackPts.length / 2)].y;
             let inCheckpoint = (Math.abs(car.x - cpX) < 400 && Math.abs(car.y - cpY) < 400);
 
             if (inCheckpoint) {
                 race.checkpointPassed = true;
             }
 
-            let crossingLine = (car.x >= lineX - 15 && car.x <= lineX + 15 && car.y >= lineY1 && car.y <= lineY2);
+            const along = (car.x - p0.x) * ndx + (car.y - p0.y) * ndy;
+            const across = (car.x - p0.x) * nx + (car.y - p0.y) * ny;
+            let crossingLine = (Math.abs(across) < 15 && Math.abs(along) < 150);
 
             if (crossingLine && !race.passedLineLastFrame) {
                 let now = Date.now();
@@ -483,14 +533,14 @@ setInterval(() => {
             }
 
             p.currentLapTime = race.startTime ? ((Date.now() - race.startTime) / 1000).toFixed(2) : '0.00';
-            p.onTrack = isOnTrack(car.x, car.y);
+            p.onTrack = isOnTrack(car.x, car.y, trackPts, room.roadWidth);
             p.speedKmh = Math.round(Math.abs(car.speed) * 10);
         }
 
         // Diffuser l'état de cette salle aux joueurs de cette salle
         const qualifTimeLeft = room.phase === 'qualif' ? Math.max(0, room.qualifDuration - (Date.now() - room.qualifStartTime)) : 0;
         const raceTimeLeft = room.phase === 'race' ? (Date.now() - room.raceStartTime) : 0;
-        const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, targetLaps: room.targetLaps, winner: room.winner });
+        const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit });
         for (let pid of playerIds) {
             if (playerWs[pid] && playerWs[pid].readyState === WebSocket.OPEN) {
                 playerWs[pid].send(payload);
@@ -544,6 +594,7 @@ setInterval(() => {
             type: 'lobby', 
             roomId, 
             players: Object.values(players).map(p => ({ id: p.id, nickname: p.nickname })),
+            circuit: room.circuit,
             timeLeft: Math.ceil(timeLeft / 1000),
             leaderboard
         });
