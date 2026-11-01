@@ -62,6 +62,8 @@
         <h1>CHOIX DE LA SALLE</h1>
         <p>Sélectionnez une salle d'attente (5 min max)</p>
         <div class="room-grid" id="roomGrid"></div>
+        <button class="menu-btn" id="showBestTimesBtn" style="margin-top:20px;background:#444;color:#fff;">MEILLEURS TEMPS PAR GP</button>
+        <div id="bestTimesPanel" style="display:none;margin-top:15px;max-height:300px;overflow-y:auto;background:rgba(0,0,0,0.7);padding:10px;border-radius:8px;width:90%;max-width:600px;"></div>
     </div>
 
     <!-- Salle d'attente -->
@@ -135,6 +137,30 @@
             }
         });
 
+        function renderBestTimes() {
+            const panel = document.getElementById('bestTimesPanel');
+            let html = '<div style="font-weight:bold;margin-bottom:8px;">Meilleurs temps par Grand Prix</div>';
+            const circuits = Object.keys(circuitLeaderboards).sort();
+            if (circuits.length === 0) {
+                html += '<div>Aucun temps enregistré</div>';
+            } else {
+                circuits.forEach(c => {
+                    const entries = circuitLeaderboards[c] || [];
+                    if (entries.length === 0) return;
+                    const best = entries[0];
+                    html += `<div style="margin:4px 0;"><b>${c}</b>: ${best.nickname} - ${best.time.toFixed(2)}s</div>`;
+                });
+            }
+            panel.innerHTML = html;
+        }
+        const bestBtn = document.getElementById('showBestTimesBtn');
+        if (bestBtn) {
+            bestBtn.addEventListener('click', () => {
+                const panel = document.getElementById('bestTimesPanel');
+                panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+                renderBestTimes();
+            });
+        }
         function bindButton(id, keyName) {
             const el = document.getElementById(id);
             el.addEventListener('touchstart', (e) => { e.preventDefault(); inputs[keyName] = true; el.classList.add('pressed'); sendInputs(); });
@@ -213,6 +239,10 @@
                         }
                         roomGrid.appendChild(btn);
                     });
+                    if (data.circuitLeaderboards) {
+                        circuitLeaderboards = data.circuitLeaderboards;
+                        renderBestTimes();
+                    }
                 } else if (data.type === 'lobby') {
                     // Mise à jour de la salle d'attente
                     document.getElementById('lobbyTimer').innerText = `Temps restant: ${Math.floor(data.timeLeft / 60)}:${(data.timeLeft % 60).toString().padStart(2, '0')}`;
@@ -341,6 +371,7 @@
         let tracksData = null;
         let trackPoints = null;
         let roadWidth = 300;
+        let circuitLeaderboards = {};
         fetch('tracks.json').then(r => r.json()).then(d => {
             tracksData = d;
             if (!trackPoints) trackPoints = d['Italian Grand Prix'] || [];

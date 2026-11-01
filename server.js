@@ -26,6 +26,7 @@ const CAR_WIDTH = 60;
 const CAR_HEIGHT = 112;
 
 let leaderboard = [];
+let circuitLeaderboards = {};
 const LEADERBOARD_FILE = path.join(__dirname, 'leaderboard.json');
 try {
     if (fs.existsSync(LEADERBOARD_FILE)) {
@@ -37,12 +38,25 @@ try {
     leaderboard = [];
 }
 
+try {
+    const clFile = path.join(__dirname, 'circuitLeaderboards.json');
+    if (fs.existsSync(clFile)) {
+        const d = fs.readFileSync(clFile, 'utf8');
+        const parsed = JSON.parse(d);
+        if (parsed && typeof parsed === 'object') circuitLeaderboards = parsed;
+    }
+} catch (e) { circuitLeaderboards = {}; }
 function saveLeaderboard() {
     try {
         fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(leaderboard, null, 2), 'utf8');
     } catch (e) {}
 }
 
+function saveCircuitLeaderboards() {
+    try {
+        fs.writeFileSync(path.join(__dirname, 'circuitLeaderboards.json'), JSON.stringify(circuitLeaderboards, null, 2), 'utf8');
+    } catch (e) {}
+}
 const tracksData = JSON.parse(fs.readFileSync(path.join(__dirname, 'www', 'tracks.json'), 'utf8'));
 const DEFAULT_TRACK = tracksData['Italian Grand Prix'];
 function getRoadWidth(circuit) {
@@ -526,6 +540,25 @@ setInterval(() => {
                         leaderboard = leaderboard.slice(0, 10);
                     }
                     saveLeaderboard();
+
+                    // Meilleurs temps par circuit
+                    let circuit = room.circuit || 'Inconnu';
+                    if (!circuitLeaderboards[circuit]) circuitLeaderboards[circuit] = [];
+                    let cexisting = circuitLeaderboards[circuit].find(e => (e.id && e.id === playerId) || (!e.id && e.nickname === nickname));
+                    if (cexisting) {
+                        if (lapDuration < cexisting.time) {
+                            cexisting.time = lapDuration;
+                            cexisting.nickname = nickname;
+                            cexisting.id = playerId;
+                        }
+                    } else {
+                        circuitLeaderboards[circuit].push({ id: playerId, nickname, time: lapDuration });
+                    }
+                    circuitLeaderboards[circuit].sort((a, b) => a.time - b.time);
+                    if (circuitLeaderboards[circuit].length > 10) {
+                        circuitLeaderboards[circuit] = circuitLeaderboards[circuit].slice(0, 10);
+                    }
+                    saveCircuitLeaderboards();
                 }
                 race.passedLineLastFrame = true;
             } else if (!crossingLine) {
@@ -572,7 +605,7 @@ setInterval(() => {
         });
     }
     
-    const payload = JSON.stringify({ type: 'roomList', rooms: roomList });
+    const payload = JSON.stringify({ type: 'roomList', rooms: roomList, circuitLeaderboards: circuitLeaderboards });
     for (let pid in playerWs) {
         if (playerWs[pid] && playerWs[pid].readyState === WebSocket.OPEN) {
             playerWs[pid].send(payload);
