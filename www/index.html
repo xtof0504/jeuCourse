@@ -281,6 +281,9 @@
                         trackPoints = tracksData[data.circuit];
                         roadWidth = (data.circuit === 'Monaco Grand Prix') ? 123 : 300;
                     }
+                    if (data.circuitLeaderboards) {
+                        circuitLeaderboards = data.circuitLeaderboards;
+                    }
                     if (!myId && data.playerId) {
                         myId = data.playerId;
                     }
@@ -312,9 +315,13 @@
                         }
                     }
 
-                    if (data.leaderboard && data.leaderboard.length > 0) {
+                    let lbEntries = data.leaderboard || [];
+                    if (data.phase === 'qualif' && data.circuit && circuitLeaderboards[data.circuit]) {
+                        lbEntries = circuitLeaderboards[data.circuit];
+                    }
+                    if (lbEntries && lbEntries.length > 0) {
                         let lbHtml = '<div style="font-weight:bold;margin-bottom:5px;">TOP 10</div>';
-                        data.leaderboard.forEach((entry, i) => {
+                        lbEntries.slice(0, 10).forEach((entry, i) => {
                             lbHtml += `<div>${i + 1}. ${entry.nickname} - ${entry.time.toFixed(2)}s</div>`;
                         });
                         document.getElementById('leaderboardList').innerHTML = lbHtml;

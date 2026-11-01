@@ -223,8 +223,8 @@ wss.on('connection', (ws) => {
                 const len = Math.hypot(dx, dy) || 1;
                 const nx = -dy / len;
                 const ny = dx / len;
-                const startX = p0.x + nx * (playerCount * 20 - 40);
-                const startY = p0.y + ny * (playerCount * 20 - 40);
+                const startX = p0.x + nx * (playerCount * 20 - 40) - (dx / len) * 30;
+                const startY = p0.y + ny * (playerCount * 20 - 40) - (dy / len) * 30;
                 const startAngle = Math.atan2(dx, -dy); // adjust? car angle 0 points up, movement (sin, -cos). For direction (dx,dy), angle = atan2(dx, -dy). Good.
                 
                 room.players[playerId] = {
@@ -288,8 +288,8 @@ wss.on('connection', (ws) => {
                             const len = Math.hypot(dx, dy) || 1;
                             const nx = -dy / len;
                             const ny = dx / len;
-                            p.car.x = p0.x + nx * (idx * 20 - 40);
-                            p.car.y = p0.y + ny * (idx * 20 - 40);
+                            p.car.x = p0.x + nx * (idx * 20 - 40) - (dx / len) * 30;
+                            p.car.y = p0.y + ny * (idx * 20 - 40) - (dy / len) * 30;
                             p.car.angle = Math.atan2(dx, -dy);
                             p.car.speed = 0;
                         }
@@ -381,8 +381,8 @@ setInterval(() => {
                 const len = Math.hypot(dx, dy) || 1;
                 const nx = -dy / len;
                 const ny = dx / len;
-                p.car.x = p0.x + nx * (idx * 20 - 40);
-                p.car.y = p0.y + ny * (idx * 20 - 40);
+                p.car.x = p0.x + nx * (idx * 20 - 40) - (dx / len) * 30;
+                p.car.y = p0.y + ny * (idx * 20 - 40) - (dy / len) * 30;
                 p.car.angle = Math.atan2(dx, -dy);
                 p.car.speed = 0;
                 p.race.laps = 0;
@@ -573,7 +573,7 @@ setInterval(() => {
         // Diffuser l'état de cette salle aux joueurs de cette salle
         const qualifTimeLeft = room.phase === 'qualif' ? Math.max(0, room.qualifDuration - (Date.now() - room.qualifStartTime)) : 0;
         const raceTimeLeft = room.phase === 'race' ? (Date.now() - room.raceStartTime) : 0;
-        const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit });
+        const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards });
         for (let pid of playerIds) {
             if (playerWs[pid] && playerWs[pid].readyState === WebSocket.OPEN) {
                 playerWs[pid].send(payload);
