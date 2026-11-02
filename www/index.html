@@ -299,9 +299,9 @@
                         if (data.phase === 'qualif') {
                             let mins = Math.floor(data.qualifTimeLeft / 60000);
                             let secs = Math.floor((data.qualifTimeLeft % 60000) / 1000);
-                            document.getElementById('chrono').innerHTML = `QUALIFICATION<br>Temps restant: ${mins}:${secs.toString().padStart(2,'0')}<br>Meilleur: ${me.race.bestTime ? me.race.bestTime.toFixed(2) : '--'}s`;
+                            document.getElementById('chrono').innerHTML = `QUALIFICATION<br>Temps restant: ${mins}:${secs.toString().padStart(2,'0')}<br>Tour: ${me.currentLapTime}s<br>S1: ${me.race.split1Time ? me.race.split1Time.toFixed(2) : '--'}s | S2: ${me.race.split2Time ? me.race.split2Time.toFixed(2) : '--'}s<br>Dernier: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s | Meilleur: ${me.race.bestTime ? me.race.bestTime.toFixed(2) : '--'}s`;
                         } else if (data.phase === 'race') {
-                            document.getElementById('chrono').innerHTML = `COURSE - ${data.circuit || ''}<br>Tour: ${me.race.laps || 0} / ${data.targetLaps}<br>Dernier: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s | Meilleur: ${me.race.bestTime ? me.race.bestTime.toFixed(2) : '--'}s`;
+                            document.getElementById('chrono').innerHTML = `COURSE - ${data.circuit || ''}<br>Tour: ${me.currentLapTime}s (${me.race.laps || 0} / ${data.targetLaps})<br>S1: ${me.race.split1Time ? me.race.split1Time.toFixed(2) : '--'}s | S2: ${me.race.split2Time ? me.race.split2Time.toFixed(2) : '--'}s<br>Dernier: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s | Meilleur: ${me.race.bestTime ? me.race.bestTime.toFixed(2) : '--'}s`;
                         } else if (data.phase === 'finished') {
                             document.getElementById('chrono').innerHTML = `TERMINE<br>Vainqueur: ${data.winner || '--'}<br>Tour: ${me.race.laps || 0} / ${data.targetLaps}`;
                         } else {
@@ -384,6 +384,32 @@
             if (!trackPoints) trackPoints = d['Italian Grand Prix'] || [];
         }).catch(() => {});
 
+        function checkpointIndices(pts) {
+            const n = pts.length;
+            if (n < 2) return [0, Math.max(0, n-1)];
+            const segs = [];
+            let total = 0;
+            for (let i = 0; i < n; i++) {
+                const a = pts[i];
+                const b = pts[(i + 1) % n];
+                const d = Math.hypot(b.x - a.x, b.y - a.y);
+                segs.push(d);
+                total += d;
+            }
+            const targets = [total / 3, (2 * total) / 3];
+            const idxs = [];
+            for (let t = 0; t < targets.length; t++) {
+                let c = 0;
+                for (let i = 0; i < n; i++) {
+                    const seg = segs[i];
+                    if (c + seg >= targets[t]) { idxs.push(i); break; }
+                    c += seg;
+                }
+                if (idxs.length <= t) idxs.push(n - 1);
+            }
+            if (idxs[0] === idxs[1]) idxs[1] = Math.min(n - 1, idxs[1] + 1);
+            return idxs;
+        }
         function drawTrack() {
             ctx.fillStyle = '#2b7a0b';
             ctx.fillRect(-5000, -5000, 15000, 15000);
@@ -424,7 +450,30 @@
             ctx.moveTo(p0.x + nx * 150, p0.y + ny * 150);
             ctx.lineTo(p0.x - nx * 150, p0.y - ny * 150);
             ctx.stroke();
+
+            // Lignes pointillees blanches aux checkpoints (33% et 66%)
+            checkpointIndices(pts).forEach(cpi => {
+                const cp0 = pts[cpi];
+                const cp1 = pts[(cpi + 1) % pts.length];
+                const cdx = cp1.x - cp0.x;
+                const cdy = cp1.y - cp0.y;
+                const clen = Math.hypot(cdx, cdy) || 1;
+                const cnx = -cdy / clen;
+                const cny = cdx / clen;
+                ctx.save();
+                ctx.setLineDash([10, 10]);
+                ctx.lineWidth = 6;
+                ctx.strokeStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.moveTo(cp0.x + cnx * 600, cp0.y + cny * 600);
+                ctx.lineTo(cp0.x - cnx * 600, cp0.y - cny * 600);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.restore();
+            });
+
             ctx.restore();
+
         }
 
         function drawCar(p) {

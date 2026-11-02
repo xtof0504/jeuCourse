@@ -95,6 +95,32 @@ const constants = {
     turnSpeed: 0.045
 };
 
+function checkpointIndices(pts) {
+    const n = pts.length;
+    if (n < 2) return [0, Math.max(0, n-1)];
+    const segs = [];
+    let total = 0;
+    for (let i = 0; i < n; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % n];
+        const d = Math.hypot(b.x - a.x, b.y - a.y);
+        segs.push(d);
+        total += d;
+    }
+    const targets = [total / 3, (2 * total) / 3];
+    const idxs = [];
+    for (let t = 0; t < targets.length; t++) {
+        let c = 0;
+        for (let i = 0; i < n; i++) {
+            const seg = segs[i];
+            if (c + seg >= targets[t]) { idxs.push(i); break; }
+            c += seg;
+        }
+        if (idxs.length <= t) idxs.push(n - 1);
+    }
+    if (idxs[0] === idxs[1]) idxs[1] = Math.min(n - 1, idxs[1] + 1);
+    return idxs;
+}
 function isOnTrack(x, y, points, roadWidth) {
     const pts = points || DEFAULT_TRACK;
     const rw = roadWidth || 300;
@@ -238,7 +264,12 @@ wss.on('connection', (ws) => {
                         lastLapTime: 0, 
                         bestTime: 0, 
                         passedLineLastFrame: false,
-                        checkpointPassed: false,
+                        checkpoint1Passed: false,
+                        checkpoint2Passed: false,
+                        passedCp1: false,
+                        passedCp2: false,
+                        split1Time: 0,
+                        split2Time: 0,
                         laps: 0,
                         finished: false,
                         finishTime: null
@@ -277,7 +308,12 @@ wss.on('connection', (ws) => {
                             p.race.finishTime = null;
                             p.race.bestTime = 0;
                             p.race.passedLineLastFrame = false;
-                            p.race.checkpointPassed = false;
+                            p.race.checkpoint1Passed = false;
+                            p.race.checkpoint2Passed = false;
+                            p.race.passedCp1 = false;
+                            p.race.passedCp2 = false;
+                            p.race.split1Time = 0;
+                            p.race.split2Time = 0;
                             // reset position
                             const idx = Object.keys(room.players).indexOf(pid);
                             const tp = room.trackPoints || DEFAULT_TRACK;
@@ -389,7 +425,12 @@ setInterval(() => {
                 p.race.finished = false;
                 p.race.finishTime = null;
                 p.race.passedLineLastFrame = false;
-                p.race.checkpointPassed = false;
+                p.race.checkpoint1Passed = false;
+                            p.race.checkpoint2Passed = false;
+                            p.race.passedCp1 = false;
+                            p.race.passedCp2 = false;
+                            p.race.split1Time = 0;
+                            p.race.split2Time = 0;
                 p.race.startTime = Date.now();
             });
             room.phase = 'race';
@@ -485,31 +526,62 @@ setInterval(() => {
             const nx = -ndy;
             const ny = ndx;
 
-            let cpX = trackPts[Math.floor(trackPts.length / 2)].x;
-            let cpY = trackPts[Math.floor(trackPts.length / 2)].y;
-            let inCheckpoint = (Math.abs(car.x - cpX) < 400 && Math.abs(car.y - cpY) < 400);
+            const idx1 = Math.floor(trackPts.length / 3);
+            const idx2 = Math.floor(2 * trackPts.length / 3);
+            const cp1 = trackPts[idx1];
+            const cp2 = trackPts[idx2];
 
-            if (inCheckpoint) {
-                race.checkpointPassed = true;
+            if (Math.abs(car.x - cp1.x) < 2000 && Math.abs(car.y - cp1.y) < 2000) {
+                race.checkpoint1Passed = true;
+            }
+            if (Math.abs(car.x - cp2.x) < 2000 && Math.abs(car.y - cp2.y) < 2000) {
+                race.checkpoint2Passed = true;
+            }
+
+            // Temps intermédiaires au passage des checkpoints
+            const cp1n = trackPts[(idx1 + 1) % trackPts.length];
+            const cp2n = trackPts[(idx2 + 1) % trackPts.length];
+            const cdx1 = cp1n.x - cp1.x, cdy1 = cp1n.y - cp1.y;
+            const clen1 = Math.hypot(cdx1, cdy1) || 1;
+            const cnx1 = -cdy1 / clen1, cny1 = cdx1 / clen1;
+            const along1 = (car.x - cp1.x) * (cdx1 / clen1) + (car.y - cp1.y) * (cdy1 / clen1);
+            const across1 = (car.x - cp1.x) * cnx1 + (car.y - cp1.y) * cny1;
+            if (Math.abs(across1) < 20 && !race.passedCp1) {
+                race.passedCp1 = true;
+                race.checkpoint1Passed = true;
+                race.split1Time = (Date.now() - race.startTime) / 1000;
+            }
+
+            const cdx2 = cp2n.x - cp2.x, cdy2 = cp2n.y - cp2.y;
+            const clen2 = Math.hypot(cdx2, cdy2) || 1;
+            const cnx2 = -cdy2 / clen2, cny2 = cdx2 / clen2;
+            const along2 = (car.x - cp2.x) * (cdx2 / clen2) + (car.y - cp2.y) * (cdy2 / clen2);
+            const across2 = (car.x - cp2.x) * cnx2 + (car.y - cp2.y) * cny2;
+            if (Math.abs(across2) < 20 && !race.passedCp2) {
+                race.passedCp2 = true;
+                race.checkpoint2Passed = true;
+                race.split2Time = (Date.now() - race.startTime) / 1000;
             }
 
             const along = (car.x - p0.x) * ndx + (car.y - p0.y) * ndy;
             const across = (car.x - p0.x) * nx + (car.y - p0.y) * ny;
-            let crossingLine = (Math.abs(across) < 15 && Math.abs(along) < 150);
+            let crossingLine = (Math.abs(across) < 50 && Math.abs(along) < 300);
 
             if (crossingLine && !race.passedLineLastFrame) {
                 let now = Date.now();
                 if (!race.startTime) {
                     race.startTime = now;
-                    race.checkpointPassed = false;
-                } else if (race.checkpointPassed) {
+                    race.checkpoint1Passed = false;
+                    race.checkpoint2Passed = false;
+                } else if (race.checkpoint1Passed && race.checkpoint2Passed) {
                     let lapDuration = (now - race.startTime) / 1000;
                     race.lastLapTime = lapDuration;
                     if (!race.bestTime || lapDuration < race.bestTime) {
                         race.bestTime = lapDuration;
                     }
                     race.startTime = now;
-                    race.checkpointPassed = false;
+                    race.checkpoint1Passed = false;
+                    race.checkpoint2Passed = false;
 
                     if (room.phase === 'race' && !race.finished) {
                         race.laps = (race.laps || 0) + 1;
@@ -562,6 +634,12 @@ setInterval(() => {
                     }
                     saveCircuitLeaderboards();
                 }
+                race.checkpoint1Passed = false;
+                race.checkpoint2Passed = false;
+                race.split1Time = 0;
+                race.split2Time = 0;
+                race.passedCp1 = false;
+                race.passedCp2 = false;
                 race.passedLineLastFrame = true;
             } else if (!crossingLine) {
                 race.passedLineLastFrame = false;
