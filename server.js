@@ -121,6 +121,32 @@ function checkpointIndices(pts) {
     if (idxs[0] === idxs[1]) idxs[1] = Math.min(n - 1, idxs[1] + 1);
     return idxs;
 }
+function splitIndices(pts) {
+    const n = pts.length;
+    if (n < 2) return [0, Math.max(0, n-1)];
+    const segs = [];
+    let total = 0;
+    for (let i = 0; i < n; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % n];
+        const d = Math.hypot(b.x - a.x, b.y - a.y);
+        segs.push(d);
+        total += d;
+    }
+    const targets = [total / 3, (2 * total) / 3];
+    const idxs = [];
+    for (let t = 0; t < targets.length; t++) {
+        let c = 0;
+        for (let i = 0; i < n; i++) {
+            const seg = segs[i];
+            if (c + seg >= targets[t]) { idxs.push(i); break; }
+            c += seg;
+        }
+        if (idxs.length <= t) idxs.push(n - 1);
+    }
+    if (idxs[0] === idxs[1]) idxs[1] = Math.min(n - 1, idxs[1] + 1);
+    return idxs;
+}
 function isOnTrack(x, y, points, roadWidth) {
     const pts = points || DEFAULT_TRACK;
     const rw = roadWidth || 300;
@@ -526,8 +552,9 @@ setInterval(() => {
             const nx = -ndy;
             const ny = ndx;
 
-            const idx1 = Math.floor(trackPts.length / 3);
-            const idx2 = Math.floor(2 * trackPts.length / 3);
+            const _ci = checkpointIndices(trackPts);
+            const idx1 = _ci[0];
+            const idx2 = _ci[1];
             const cp1 = trackPts[idx1];
             const cp2 = trackPts[idx2];
 
@@ -546,10 +573,11 @@ setInterval(() => {
             const cnx1 = -cdy1 / clen1, cny1 = cdx1 / clen1;
             const along1 = (car.x - cp1.x) * (cdx1 / clen1) + (car.y - cp1.y) * (cdy1 / clen1);
             const across1 = (car.x - cp1.x) * cnx1 + (car.y - cp1.y) * cny1;
-            if (Math.abs(across1) < 20 && !race.passedCp1) {
+            const cpThreshold1 = (room.roadWidth || 300) / 2 + 20;
+            if (Math.abs(across1) < cpThreshold1 && along1 >= -50 && along1 <= clen1 + 50 && !race.passedCp1) {
                 race.passedCp1 = true;
                 race.checkpoint1Passed = true;
-                race.split1Time = (Date.now() - race.startTime) / 1000;
+                if (race.startTime) race.split1Time = (Date.now() - race.startTime) / 1000;
             }
 
             const cdx2 = cp2n.x - cp2.x, cdy2 = cp2n.y - cp2.y;
@@ -557,12 +585,14 @@ setInterval(() => {
             const cnx2 = -cdy2 / clen2, cny2 = cdx2 / clen2;
             const along2 = (car.x - cp2.x) * (cdx2 / clen2) + (car.y - cp2.y) * (cdy2 / clen2);
             const across2 = (car.x - cp2.x) * cnx2 + (car.y - cp2.y) * cny2;
-            if (Math.abs(across2) < 20 && !race.passedCp2) {
+            const cpThreshold2 = (room.roadWidth || 300) / 2 + 20;
+            if (Math.abs(across2) < cpThreshold2 && along2 >= -50 && along2 <= clen2 + 50 && !race.passedCp2) {
                 race.passedCp2 = true;
                 race.checkpoint2Passed = true;
-                race.split2Time = (Date.now() - race.startTime) / 1000;
+                if (race.startTime) race.split2Time = (Date.now() - race.startTime) / 1000;
             }
 
+            // Temps intermédiaires à 33% et 66% de la distance
             const along = (car.x - p0.x) * ndx + (car.y - p0.y) * ndy;
             const across = (car.x - p0.x) * nx + (car.y - p0.y) * ny;
             let crossingLine = (Math.abs(across) < 50 && Math.abs(along) < 300);
