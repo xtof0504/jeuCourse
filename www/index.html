@@ -316,7 +316,7 @@
                     }
 
                     let lbEntries = data.leaderboard || [];
-                    if (data.phase === 'qualif' && data.circuit && circuitLeaderboards[data.circuit]) {
+                    if (data.circuit && circuitLeaderboards[data.circuit] && circuitLeaderboards[data.circuit].length > 0) {
                         lbEntries = circuitLeaderboards[data.circuit];
                     }
                     if (lbEntries && lbEntries.length > 0) {

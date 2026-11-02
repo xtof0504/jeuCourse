@@ -525,15 +525,17 @@ setInterval(() => {
 
                     let nickname = p.nickname || 'Pilote';
                     let playerId = p.id || id;
-                    let existing = leaderboard.find(e => (e.id && e.id === playerId) || (!e.id && e.nickname === nickname));
+                    let circuit = room.circuit || 'Inconnu';
+                    let date = new Date().toISOString().slice(0, 10);
+                    let existing = leaderboard.find(e => e.nickname === nickname && e.circuit === circuit);
                     if (existing) {
                         if (lapDuration < existing.time) {
                             existing.time = lapDuration;
                             existing.nickname = nickname;
-                            existing.id = playerId;
+                            existing.date = date;
                         }
                     } else {
-                        leaderboard.push({ id: playerId, nickname, time: lapDuration });
+                        leaderboard.push({ id: playerId, nickname, time: lapDuration, circuit, date });
                     }
                     leaderboard.sort((a, b) => a.time - b.time);
                     if (leaderboard.length > 10) {
@@ -542,9 +544,9 @@ setInterval(() => {
                     saveLeaderboard();
 
                     // Meilleurs temps par circuit
-                    let circuit = room.circuit || 'Inconnu';
+                    circuit = room.circuit || 'Inconnu';
                     if (!circuitLeaderboards[circuit]) circuitLeaderboards[circuit] = [];
-                    let cexisting = circuitLeaderboards[circuit].find(e => (e.id && e.id === playerId) || (!e.id && e.nickname === nickname));
+                    let cexisting = circuitLeaderboards[circuit].find(e => e.nickname === nickname);
                     if (cexisting) {
                         if (lapDuration < cexisting.time) {
                             cexisting.time = lapDuration;
