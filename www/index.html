@@ -66,7 +66,16 @@
         <div id="bestTimesPanel" style="display:none;margin-top:15px;max-height:300px;overflow-y:auto;background:rgba(0,0,0,0.7);padding:10px;border-radius:8px;width:90%;max-width:600px;"></div>
     </div>
 
-    <!-- Ecran prêt -->
+    <!-- Feux de départ -->
+    <div id="lightsScreen" style="display:none;position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);padding:8px;border-radius:8px;z-index:15;">
+        <div style="display:flex;gap:8px;">
+            <div class="light" style="width:20px;height:20px;border-radius:50%;background:#333;"></div>
+            <div class="light" style="width:20px;height:20px;border-radius:50%;background:#333;"></div>
+            <div class="light" style="width:20px;height:20px;border-radius:50%;background:#333;"></div>
+            <div class="light" style="width:20px;height:20px;border-radius:50%;background:#333;"></div>
+            <div class="light" style="width:20px;height:20px;border-radius:50%;background:#333;"></div>
+        </div>
+    </div>
     <div id="readyScreen" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);flex-direction:column;align-items:center;justify-content:center;z-index:10;">
         <h1>PRÊT ?</h1>
         <p>La course démarre dans :</p>
@@ -316,6 +325,18 @@ function sectorColor(val, personalBest, overallBest) {
                         document.getElementById('readyBtn').disabled = false;
                     }
 
+                    const lightsScreen = document.getElementById('lightsScreen');
+                    if (data.phase === 'lights') {
+                        lightsScreen.style.display = 'block';
+                        const lights = lightsScreen.querySelectorAll('.light');
+                        const count = data.lightsCount || 0;
+                        lights.forEach((el, i) => {
+                            el.style.background = (i < count) ? '#ff0000' : '#333';
+                        });
+                    } else {
+                        lightsScreen.style.display = 'none';
+                    }
+
                     if (myId && players[myId]) {
                         let me = players[myId];
                         document.getElementById('speedometer').innerText = `Vitesse: ${me.speedKmh} km/h`;
@@ -530,7 +551,10 @@ function sectorColor(val, personalBest, overallBest) {
 
         }
  
-        function drawCar(p) {           
+        function drawCar(p) {
+            if (p.race && p.race.blink && p.race.penaltyUntil && p.race.penaltyUntil > Date.now() && (Date.now() % 400 < 200)) {
+                return;
+            }
             let car = p.car;
             let carImageName = p.carImage || 'ferrari.png';
             let img = carImages[carImageName];
