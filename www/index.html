@@ -503,11 +503,34 @@ function sectorColor(val, personalBest, overallBest) {
                 ctx.restore();
             });
 
+            // Grille de départ (10 emplacements)
+            for (let gi = 0; gi < 10; gi++) {
+                const row = gi;
+                const side = (gi % 2 === 0) ? -1 : 1;
+                const across = side * 80;
+                const distance = 40 + gi * 120;
+                const gx = p0.x + nx * across - (dx / len) * distance;
+                const gy = p0.y + ny * across - (dy / len) * distance;
+                ctx.save();
+                ctx.translate(gx, gy);
+                ctx.rotate(Math.atan2(dx, -dy) + Math.PI / 2);
+                ctx.fillStyle = 'rgba(255,255,255,0.35)';
+                ctx.fillRect(-20, -56, 40, 112);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(-20, -56, 40, 112);
+                ctx.fillStyle = '#ffcc00';
+                ctx.font = 'bold 16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText((gi + 1).toString(), 0, 8);
+                ctx.restore();
+            }
+
             ctx.restore();
 
         }
-
-        function drawCar(p) {
+ 
+        function drawCar(p) {           
             let car = p.car;
             let carImageName = p.carImage || 'ferrari.png';
             let img = carImages[carImageName];
@@ -557,3 +580,4 @@ function sectorColor(val, personalBest, overallBest) {
     </script>
 </body>
 </html>
+

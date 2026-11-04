@@ -236,6 +236,25 @@ function collideOBB(c1, a1, c2, a2) {
     return { overlap: minOverlap, nx: mtvAxis.x, ny: mtvAxis.y };
 }
 
+function gridPosition(tp, idx) {
+    const p0 = tp[0];
+    const p1 = tp[1] || tp[0];
+    const dx = p1.x - p0.x;
+    const dy = p1.y - p0.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const row = idx;
+    const side = (idx % 2 === 0) ? -1 : 1;
+    const across = side * 80;
+    const distance = 40 + idx * 120;
+    return {
+        x: p0.x + nx * across - (dx / len) * distance,
+        y: p0.y + ny * across - (dy / len) * distance,
+        angle: Math.atan2(dx, -dy)
+    };
+}
+
 function startRacePhase(room) {
     let sorted = Object.values(room.players).sort((a, b) => {
         let ta = a.race.bestTime || Infinity;
@@ -244,16 +263,10 @@ function startRacePhase(room) {
     });
     sorted.forEach((p, idx) => {
         const tp = room.trackPoints || DEFAULT_TRACK;
-        const p0 = tp[0];
-        const p1 = tp[1] || tp[0];
-        const dx = p1.x - p0.x;
-        const dy = p1.y - p0.y;
-        const len = Math.hypot(dx, dy) || 1;
-        const nx = -dy / len;
-        const ny = dx / len;
-        p.car.x = p0.x + nx * (idx * 20 - 40) - (dx / len) * 30;
-        p.car.y = p0.y + ny * (idx * 20 - 40) - (dy / len) * 30;
-        p.car.angle = Math.atan2(dx, -dy);
+        const gp = gridPosition(tp, idx);
+        p.car.x = gp.x;
+        p.car.y = gp.y;
+        p.car.angle = gp.angle;
         p.car.speed = 0;
         p.race.laps = 0;
         p.race.finished = false;
@@ -317,16 +330,10 @@ wss.on('connection', (ws) => {
                 }
                 
                 const tp = room.trackPoints || DEFAULT_TRACK;
-                const p0 = tp[0];
-                const p1 = tp[1] || tp[0];
-                const dx = p1.x - p0.x;
-                const dy = p1.y - p0.y;
-                const len = Math.hypot(dx, dy) || 1;
-                const nx = -dy / len;
-                const ny = dx / len;
-                const startX = p0.x + nx * (playerCount * 20 - 40) - (dx / len) * 30;
-                const startY = p0.y + ny * (playerCount * 20 - 40) - (dy / len) * 30;
-                const startAngle = Math.atan2(dx, -dy); // adjust? car angle 0 points up, movement (sin, -cos). For direction (dx,dy), angle = atan2(dx, -dy). Good.
+                const gp = gridPosition(tp, playerCount);
+                const startX = gp.x;
+                const startY = gp.y;
+                const startAngle = gp.angle;
                 
                 room.players[playerId] = {
                     id: playerId,
@@ -850,3 +857,5 @@ setInterval(() => {
 server.listen(3000, 'localhost', () => {
     console.log('Serveur multijoueur avec salles démarré sur http://localhost:3000');
 });
+
+
