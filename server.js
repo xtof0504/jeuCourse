@@ -82,7 +82,10 @@ for (let i = 0; i < ROOM_COUNT; i++) {
         raceStartTime: null,
         targetLaps: 10,
         winner: null,
-        timer: null
+        timer: null,
+        bestQualifS1Time: 0,
+        bestQualifS2Time: 0,
+        bestQualifS3Time: 0
     };
 }
 
@@ -298,7 +301,14 @@ wss.on('connection', (ws) => {
                         split2Time: 0,
                         laps: 0,
                         finished: false,
-                        finishTime: null
+                        finishTime: null,
+                        lastS1Time: 0,
+                        lastS2Time: 0,
+                        lastS3Time: 0,
+                        bestS1Time: 0,
+                        bestS2Time: 0,
+                        bestS3Time: 0,
+                        prevAlong: null
                     }
                 };
                 
@@ -322,6 +332,9 @@ wss.on('connection', (ws) => {
                         room.raceStarted = true;
                         room.started = true;
                         room.qualifStartTime = Date.now();
+                        room.bestQualifS1Time = 0;
+                        room.bestQualifS2Time = 0;
+                        room.bestQualifS3Time = 0;
                         if (room.timer) {
                             clearTimeout(room.timer);
                             room.timer = null;
@@ -340,6 +353,13 @@ wss.on('connection', (ws) => {
                             p.race.passedCp2 = false;
                             p.race.split1Time = 0;
                             p.race.split2Time = 0;
+                            p.race.lastS1Time = 0;
+                            p.race.lastS2Time = 0;
+                            p.race.lastS3Time = 0;
+                            p.race.bestS1Time = 0;
+                            p.race.bestS2Time = 0;
+                            p.race.bestS3Time = 0;
+                            p.race.prevAlong = null;
                             // reset position
                             const idx = Object.keys(room.players).indexOf(pid);
                             const tp = room.trackPoints || DEFAULT_TRACK;
@@ -377,6 +397,9 @@ wss.on('connection', (ws) => {
                         rooms[roomId].trackPoints = DEFAULT_TRACK;
                         rooms[roomId].roadWidth = 300;
                         rooms[roomId].timer = null;
+                        rooms[roomId].bestQualifS1Time = 0;
+                        rooms[roomId].bestQualifS2Time = 0;
+                        rooms[roomId].bestQualifS3Time = 0;
                     }
                 }
             }
@@ -457,6 +480,13 @@ setInterval(() => {
                             p.race.passedCp2 = false;
                             p.race.split1Time = 0;
                             p.race.split2Time = 0;
+                            p.race.lastS1Time = 0;
+                            p.race.lastS2Time = 0;
+                            p.race.lastS3Time = 0;
+                            p.race.bestS1Time = 0;
+                            p.race.bestS2Time = 0;
+                            p.race.bestS3Time = 0;
+                            p.race.prevAlong = null;
                 p.race.startTime = Date.now();
             });
             room.phase = 'race';
@@ -577,7 +607,11 @@ setInterval(() => {
             if (Math.abs(across1) < cpThreshold1 && along1 >= -50 && along1 <= clen1 + 50 && !race.passedCp1) {
                 race.passedCp1 = true;
                 race.checkpoint1Passed = true;
-                if (race.startTime) race.split1Time = (Date.now() - race.startTime) / 1000;
+                if (race.startTime) {
+                    race.split1Time = (Date.now() - race.startTime) / 1000;
+                    if (!race.bestS1Time || race.split1Time < race.bestS1Time) race.bestS1Time = race.split1Time;
+                    if (room.phase === 'qualif' && (!room.bestQualifS1Time || race.split1Time < room.bestQualifS1Time)) room.bestQualifS1Time = race.split1Time;
+                }
             }
 
             const cdx2 = cp2n.x - cp2.x, cdy2 = cp2n.y - cp2.y;
@@ -589,15 +623,27 @@ setInterval(() => {
             if (Math.abs(across2) < cpThreshold2 && along2 >= -50 && along2 <= clen2 + 50 && !race.passedCp2) {
                 race.passedCp2 = true;
                 race.checkpoint2Passed = true;
-                if (race.startTime) race.split2Time = (Date.now() - race.startTime) / 1000;
+                if (race.startTime) {
+                    race.split2Time = (Date.now() - race.startTime) / 1000;
+                    let sector2 = race.split2Time - (race.split1Time || 0);
+                    if (sector2 > 0 && (!race.bestS2Time || sector2 < race.bestS2Time)) race.bestS2Time = sector2;
+                    if (room.phase === 'qualif' && sector2 > 0 && (!room.bestQualifS2Time || sector2 < room.bestQualifS2Time)) room.bestQualifS2Time = sector2;
+                }
             }
 
             // Temps intermédiaires à 33% et 66% de la distance
             const along = (car.x - p0.x) * ndx + (car.y - p0.y) * ndy;
             const across = (car.x - p0.x) * nx + (car.y - p0.y) * ny;
-            let crossingLine = (Math.abs(across) < 50 && Math.abs(along) < 300);
+            const prevAlong = (race.prevAlong === undefined) ? null : race.prevAlong;
+            let crossedFinish = false;
+            if (prevAlong !== null) {
+                if ((prevAlong < 0 && along >= 0) || (prevAlong > 0 && along <= 0)) crossedFinish = true;
+            }
+            race.prevAlong = along;
+            const acrossThreshold = (room.roadWidth || 300) / 2 + 40;
+            let crossingLine = crossedFinish && Math.abs(across) < acrossThreshold && Math.abs(along) < 500;
 
-            if (crossingLine && !race.passedLineLastFrame) {
+            if (crossingLine) {
                 let now = Date.now();
                 if (!race.startTime) {
                     race.startTime = now;
@@ -606,6 +652,19 @@ setInterval(() => {
                 } else if (race.checkpoint1Passed && race.checkpoint2Passed) {
                     let lapDuration = (now - race.startTime) / 1000;
                     race.lastLapTime = lapDuration;
+                    race.lastS1Time = race.split1Time || 0;
+                    race.lastS2Time = Math.max(0, (race.split2Time || 0) - (race.split1Time || 0));
+                    race.lastS3Time = Math.max(0, lapDuration - (race.split2Time || 0));
+                    if (race.split1Time > 0 && (!race.bestS1Time || race.split1Time < race.bestS1Time)) race.bestS1Time = race.split1Time;
+                    let _s2 = (race.split2Time || 0) - (race.split1Time || 0);
+                    if (_s2 > 0 && (!race.bestS2Time || _s2 < race.bestS2Time)) race.bestS2Time = _s2;
+                    let _s3 = lapDuration - (race.split2Time || 0);
+                    if (_s3 > 0 && (!race.bestS3Time || _s3 < race.bestS3Time)) race.bestS3Time = _s3;
+                    if (room.phase === 'qualif') {
+                        if (race.split1Time > 0 && (!room.bestQualifS1Time || race.split1Time < room.bestQualifS1Time)) room.bestQualifS1Time = race.split1Time;
+                        if (_s2 > 0 && (!room.bestQualifS2Time || _s2 < room.bestQualifS2Time)) room.bestQualifS2Time = _s2;
+                        if (_s3 > 0 && (!room.bestQualifS3Time || _s3 < room.bestQualifS3Time)) room.bestQualifS3Time = _s3;
+                    }
                     if (!race.bestTime || lapDuration < race.bestTime) {
                         race.bestTime = lapDuration;
                     }
@@ -683,7 +742,7 @@ setInterval(() => {
         // Diffuser l'état de cette salle aux joueurs de cette salle
         const qualifTimeLeft = room.phase === 'qualif' ? Math.max(0, room.qualifDuration - (Date.now() - room.qualifStartTime)) : 0;
         const raceTimeLeft = room.phase === 'race' ? (Date.now() - room.raceStartTime) : 0;
-        const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards });
+        const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0 });
         for (let pid of playerIds) {
             if (playerWs[pid] && playerWs[pid].readyState === WebSocket.OPEN) {
                 playerWs[pid].send(payload);
