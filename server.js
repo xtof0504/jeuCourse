@@ -78,7 +78,7 @@ for (let i = 0; i < ROOM_COUNT; i++) {
         trackPoints: DEFAULT_TRACK,
         roadWidth: 300,
         qualifStartTime: null,
-        qualifDuration: 5 * 60 * 1000,
+        qualifDuration: 60 * 1000,
         readyStartTime: null,
         readyDuration: 60 * 1000,
         raceStartTime: null,
@@ -247,10 +247,11 @@ function gridPosition(tp, idx) {
     const row = idx;
     const side = (idx % 2 === 0) ? -1 : 1;
     const across = side * 80;
-    const distance = 40 + idx * 120;
+    const markerDistance = 40 + idx * 120;
+    const carDistance = markerDistance + 70;
     return {
-        x: p0.x + nx * across - (dx / len) * distance,
-        y: p0.y + ny * across - (dy / len) * distance,
+        x: p0.x + nx * across - (dx / len) * carDistance,
+        y: p0.y + ny * across - (dy / len) * carDistance,
         angle: Math.atan2(dx, -dy)
     };
 }
@@ -857,5 +858,6 @@ setInterval(() => {
 server.listen(3000, 'localhost', () => {
     console.log('Serveur multijoueur avec salles démarré sur http://localhost:3000');
 });
+
 
 
