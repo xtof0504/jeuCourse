@@ -79,6 +79,8 @@ for (let i = 0; i < ROOM_COUNT; i++) {
         roadWidth: 300,
         qualifStartTime: null,
         qualifDuration: 5 * 60 * 1000,
+        readyStartTime: null,
+        readyDuration: 60 * 1000,
         raceStartTime: null,
         targetLaps: 10,
         winner: null,
@@ -234,6 +236,50 @@ function collideOBB(c1, a1, c2, a2) {
     return { overlap: minOverlap, nx: mtvAxis.x, ny: mtvAxis.y };
 }
 
+function startRacePhase(room) {
+    let sorted = Object.values(room.players).sort((a, b) => {
+        let ta = a.race.bestTime || Infinity;
+        let tb = b.race.bestTime || Infinity;
+        return ta - tb;
+    });
+    sorted.forEach((p, idx) => {
+        const tp = room.trackPoints || DEFAULT_TRACK;
+        const p0 = tp[0];
+        const p1 = tp[1] || tp[0];
+        const dx = p1.x - p0.x;
+        const dy = p1.y - p0.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+        p.car.x = p0.x + nx * (idx * 20 - 40) - (dx / len) * 30;
+        p.car.y = p0.y + ny * (idx * 20 - 40) - (dy / len) * 30;
+        p.car.angle = Math.atan2(dx, -dy);
+        p.car.speed = 0;
+        p.race.laps = 0;
+        p.race.finished = false;
+        p.race.finishTime = null;
+        p.race.passedLineLastFrame = false;
+        p.race.checkpoint1Passed = false;
+        p.race.checkpoint2Passed = false;
+        p.race.passedCp1 = false;
+        p.race.passedCp2 = false;
+        p.race.split1Time = 0;
+        p.race.split2Time = 0;
+        p.race.lastS1Time = 0;
+        p.race.lastS2Time = 0;
+        p.race.lastS3Time = 0;
+        p.race.bestS1Time = 0;
+        p.race.bestS2Time = 0;
+        p.race.bestS3Time = 0;
+        p.race.prevAlong = null;
+        p.race.ready = false;
+        p.race.startTime = Date.now();
+    });
+    room.phase = 'race';
+    room.raceStartTime = Date.now();
+    room.readyStartTime = null;
+}
+
 wss.on('connection', (ws) => {
     const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
     console.log(`Joueur connecté : ${playerId}`);
@@ -308,7 +354,8 @@ wss.on('connection', (ws) => {
                         bestS1Time: 0,
                         bestS2Time: 0,
                         bestS3Time: 0,
-                        prevAlong: null
+                        prevAlong: null,
+                        ready: false
                     }
                 };
                 
@@ -335,6 +382,7 @@ wss.on('connection', (ws) => {
                         room.bestQualifS1Time = 0;
                         room.bestQualifS2Time = 0;
                         room.bestQualifS3Time = 0;
+                        room.readyStartTime = null;
                         if (room.timer) {
                             clearTimeout(room.timer);
                             room.timer = null;
@@ -360,6 +408,7 @@ wss.on('connection', (ws) => {
                             p.race.bestS2Time = 0;
                             p.race.bestS3Time = 0;
                             p.race.prevAlong = null;
+                            p.race.ready = false;
                             // reset position
                             const idx = Object.keys(room.players).indexOf(pid);
                             const tp = room.trackPoints || DEFAULT_TRACK;
@@ -385,6 +434,9 @@ wss.on('connection', (ws) => {
                     delete rooms[roomId].players[playerId];
                     currentRoom = null;
                     playerRoom[playerId] = null;
+                    if (rooms[roomId] && rooms[roomId].phase === 'ready' && Object.keys(rooms[roomId].players).length > 0 && Object.values(rooms[roomId].players).every(p => p.ready)) {
+                        startRacePhase(rooms[roomId]);
+                    }
                     if (Object.keys(rooms[roomId].players).length === 0) {
                         rooms[roomId].phase = 'lobby';
                         rooms[roomId].started = false;
@@ -400,6 +452,7 @@ wss.on('connection', (ws) => {
                         rooms[roomId].bestQualifS1Time = 0;
                         rooms[roomId].bestQualifS2Time = 0;
                         rooms[roomId].bestQualifS3Time = 0;
+                        rooms[roomId].readyStartTime = null;
                     }
                 }
             }
@@ -413,6 +466,15 @@ wss.on('connection', (ws) => {
                 }
             }
             
+            if (data.type === 'ready' && currentRoom !== null && rooms[currentRoom] && rooms[currentRoom].players[playerId]) {
+                let room = rooms[currentRoom];
+                if (room.phase === 'ready') {
+                    room.players[playerId].ready = true;
+                    let allReady = Object.keys(room.players).length > 0 && Object.values(room.players).every(p => p.ready);
+                    if (allReady) startRacePhase(room);
+                }
+            }
+
             if (data.type === 'input' && currentRoom !== null && rooms[currentRoom] && rooms[currentRoom].players[playerId]) {
                 rooms[currentRoom].players[playerId].inputs = data.inputs;
             }
@@ -449,52 +511,27 @@ setInterval(() => {
         let room = rooms[roomId];
         if (!room.raceStarted) continue;
         
-        // Transition qualification -> course après 5 minutes
+        // Transition qualification -> écran prêt après 5 minutes
         if (room.phase === 'qualif' && (Date.now() - room.qualifStartTime) >= room.qualifDuration) {
-            // grilles de départ selon meilleurs temps de qualif
-            let sorted = Object.values(room.players).sort((a, b) => {
-                let ta = a.race.bestTime || Infinity;
-                let tb = b.race.bestTime || Infinity;
-                return ta - tb;
-            });
-            sorted.forEach((p, idx) => {
-                const tp = room.trackPoints || DEFAULT_TRACK;
-                const p0 = tp[0];
-                const p1 = tp[1] || tp[0];
-                const dx = p1.x - p0.x;
-                const dy = p1.y - p0.y;
-                const len = Math.hypot(dx, dy) || 1;
-                const nx = -dy / len;
-                const ny = dx / len;
-                p.car.x = p0.x + nx * (idx * 20 - 40) - (dx / len) * 30;
-                p.car.y = p0.y + ny * (idx * 20 - 40) - (dy / len) * 30;
-                p.car.angle = Math.atan2(dx, -dy);
-                p.car.speed = 0;
-                p.race.laps = 0;
-                p.race.finished = false;
-                p.race.finishTime = null;
-                p.race.passedLineLastFrame = false;
-                p.race.checkpoint1Passed = false;
-                            p.race.checkpoint2Passed = false;
-                            p.race.passedCp1 = false;
-                            p.race.passedCp2 = false;
-                            p.race.split1Time = 0;
-                            p.race.split2Time = 0;
-                            p.race.lastS1Time = 0;
-                            p.race.lastS2Time = 0;
-                            p.race.lastS3Time = 0;
-                            p.race.bestS1Time = 0;
-                            p.race.bestS2Time = 0;
-                            p.race.bestS3Time = 0;
-                            p.race.prevAlong = null;
-                p.race.startTime = Date.now();
-            });
-            room.phase = 'race';
-            room.raceStartTime = Date.now();
+            room.phase = 'ready';
+            room.readyStartTime = Date.now();
+        }
+        // Transition prêt -> course après 1 minute
+        if (room.phase === 'ready' && (Date.now() - room.readyStartTime) >= room.readyDuration) {
+            startRacePhase(room);
         }
         let players = room.players;
         let trackPts = room.trackPoints || DEFAULT_TRACK;
         let playerIds = Object.keys(players);
+
+        if (room.phase === 'ready') {
+            const readyTimeLeft = Math.max(0, room.readyDuration - (Date.now() - room.readyStartTime));
+            const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft: 0, raceTimeLeft: 0, readyTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0 });
+            for (let pid of playerIds) {
+                if (playerWs[pid] && playerWs[pid].readyState === WebSocket.OPEN) playerWs[pid].send(payload);
+            }
+            continue;
+        }
         
         // 1. Mouvement
         for (let id of playerIds) {
@@ -740,9 +777,10 @@ setInterval(() => {
         }
 
         // Diffuser l'état de cette salle aux joueurs de cette salle
-        const qualifTimeLeft = room.phase === 'qualif' ? Math.max(0, room.qualifDuration - (Date.now() - room.qualifStartTime)) : 0;
-        const raceTimeLeft = room.phase === 'race' ? (Date.now() - room.raceStartTime) : 0;
-        const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0 });
+const qualifTimeLeft = room.phase === 'qualif' ? Math.max(0, room.qualifDuration - (Date.now() - room.qualifStartTime)) : 0;
+const raceTimeLeft = room.phase === 'race' ? (Date.now() - room.raceStartTime) : 0;
+const readyTimeLeft = room.phase === 'ready' ? Math.max(0, room.readyDuration - (Date.now() - room.readyStartTime)) : 0;
+const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, readyTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0 });
         for (let pid of playerIds) {
             if (playerWs[pid] && playerWs[pid].readyState === WebSocket.OPEN) {
                 playerWs[pid].send(payload);
