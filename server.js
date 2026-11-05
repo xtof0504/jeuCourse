@@ -78,7 +78,7 @@ for (let i = 0; i < ROOM_COUNT; i++) {
         trackPoints: DEFAULT_TRACK,
         roadWidth: 300,
         qualifStartTime: null,
-        qualifDuration: 60 * 1000,
+        qualifDuration: 5 * 60 * 1000,
         readyStartTime: null,
         readyDuration: 60 * 1000,
         lightsStartTime: null,
@@ -898,9 +898,16 @@ setInterval(() => {
     }
 }, 1000);
 
-server.listen(3000, 'localhost', () => {
-    console.log('Serveur multijoueur avec salles démarré sur http://localhost:3000');
+let serverConfig = { port: 3000, host: 'localhost' };
+try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'www', 'config.json'), 'utf8'));
+    if (cfg && cfg.port) serverConfig.port = cfg.port;
+    if (cfg && cfg.host) serverConfig.host = cfg.host;
+} catch (e) {}
+server.listen(serverConfig.port, serverConfig.host, () => {
+    console.log(`Serveur multijoueur avec salles démarré sur http://${serverConfig.host}:${serverConfig.port}`);
 });
+
 
 
 

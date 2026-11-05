@@ -112,7 +112,8 @@
         let players = {};
         let myId = null;
         let inputs = { left: false, right: false, accel: false, brake: false };
-        let currentRoom = null;
+        let serverUrl = 'ws://localhost:3000';
+fetch('config.json').then(r => r.json()).then(c => { if (c && c.serverUrl) serverUrl = c.serverUrl; }).catch(() => {});
 function sectorColor(val, personalBest, overallBest) {
     if (val && overallBest && Math.abs(val - overallBest) < 0.005) return 'color:#9400d3;font-weight:bold;';
     if (val && personalBest && Math.abs(val - personalBest) < 0.005) return 'color:#00ff00;font-weight:bold;';
@@ -220,7 +221,7 @@ function sectorColor(val, personalBest, overallBest) {
 
         // Page de connexion
         document.getElementById('connectBtn').addEventListener('click', () => {
-            ws = new WebSocket('ws://localhost:3000');
+            ws = new WebSocket(serverUrl);
 
             ws.onopen = () => {
                 const nickname = document.getElementById('nicknameInput').value || 'Pilote';
