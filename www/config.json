@@ -1,5 +1,5 @@
 {
-  "serverUrl": "ws://localhost:3000",
+  "serverUrl": "ws://216.163.184.130:3000",
   "port": 3000,
-  "host": "localhost"
+  "host": "216.163.184.130"
 }

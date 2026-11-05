@@ -94,7 +94,7 @@ for (let i = 0; i < ROOM_COUNT; i++) {
 }
 
 const constants = {
-    maxSpeed: 20,
+    maxSpeed: 25,
     reverseMaxSpeed: 5,
     accel: 0.4,
     friction: 0.04,
@@ -907,6 +907,7 @@ try {
 server.listen(serverConfig.port, serverConfig.host, () => {
     console.log(`Serveur multijoueur avec salles démarré sur http://${serverConfig.host}:${serverConfig.port}`);
 });
+
 
 
 
