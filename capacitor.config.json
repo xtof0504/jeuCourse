@@ -1,5 +1,8 @@
 {
   "appId": "com.xtof.jeucourse",
   "appName": "TopDownRacing",
-  "webDir": "www"
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true
+  }
 }

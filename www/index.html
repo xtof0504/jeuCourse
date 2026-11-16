@@ -17,9 +17,20 @@
         h1 { margin-bottom: 10px; font-size: 32px; color: #ffcc00; text-align: center; }
         input { padding: 12px; font-size: 18px; border-radius: 8px; border: none; margin-bottom: 20px; width: 80%; max-width: 300px; text-align: center; }
         .menu-btn { padding: 15px 30px; font-size: 20px; font-weight: bold; background: #ffcc00; color: #111; border: none; border-radius: 30px; cursor: pointer; margin: 5px; }
-        .room-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 20px; }
-        .room-btn { padding: 20px; font-size: 16px; font-weight: bold; background: #333; color: white; border: 2px solid #ffcc00; border-radius: 10px; cursor: pointer; text-align: center; }
+        #roomScreen { justify-content: safe center; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 16px; box-sizing: border-box; }
+        #roomScreen p { margin: 4px 0; text-align: center; }
+        .room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin: 12px 0; width: 100%; max-width: 900px; }
+        .room-btn { padding: 8px 6px; font-size: 15px; font-weight: bold; background: #333; color: white; border: 2px solid #ffcc00; border-radius: 10px; cursor: pointer; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; touch-action: manipulation; }
         .room-btn:hover { background: #555; }
+        .room-btn small { font-size: 12px; }
+        .room-btn .room-players { font-size: 11px; font-weight: normal; color: #ccc; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #roomScreen .menu-btn { font-size: 16px; padding: 10px 20px; flex-shrink: 0; }
+        @media (max-height: 500px), (max-width: 500px) {
+            #roomScreen h1 { font-size: 22px; margin: 0 0 4px; }
+            #roomScreen p { font-size: 13px; }
+            .room-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; margin: 8px 0; }
+            .room-btn { font-size: 13px; padding: 6px 4px; }
+        }
         .player-list { margin: 20px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 10px; min-width: 250px; }
         .player-list div { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
     </style>
@@ -51,7 +62,8 @@
     <div id="connectionScreen">
         <h1>MONZA MULTIJOUEUR</h1>
         <p>Entrez votre surnom :</p>
-        <input type="text" id="nicknameInput" value="Pilote">
+        <input type="text" id="nicknameInput" placeholder="Votre surnom" maxlength="20" autocomplete="off">
+        <p id="nicknameError" style="display:none;color:#e63946;margin:-12px 0 12px;">Le surnom est obligatoire.</p>
         <p>Choisissez votre voiture :</p>
         <select id="carSelect" style="padding:10px;font-size:16px;margin-bottom:20px;border-radius:8px;"></select>
         <button class="menu-btn" id="connectBtn">CONNEXION</button>
@@ -63,7 +75,7 @@
         <p>Sélectionnez une salle d'attente (5 min max)</p>
         <div class="room-grid" id="roomGrid"></div>
         <button class="menu-btn" id="showBestTimesBtn" style="margin-top:20px;background:#444;color:#fff;">MEILLEURS TEMPS PAR GP</button>
-        <div id="bestTimesPanel" style="display:none;margin-top:15px;max-height:300px;overflow-y:auto;background:rgba(0,0,0,0.7);padding:10px;border-radius:8px;width:90%;max-width:600px;"></div>
+        <div id="bestTimesPanel" style="display:none;margin-top:15px;max-height:300px;overflow-y:auto;flex-shrink:0;box-sizing:border-box;background:rgba(0,0,0,0.7);padding:10px;border-radius:8px;width:90%;max-width:600px;"></div>
     </div>
 
     <!-- Feux de départ -->
@@ -96,6 +108,8 @@
         <button class="menu-btn" id="leaveRoomBtn" style="background: #e63946; color: white;">QUITTER LA SALLE</button>
     </div>
 
+    <script src="config.js"></script>
+    <script src="js/socket.io.js"></script>
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
@@ -112,8 +126,39 @@
         let players = {};
         let myId = null;
         let inputs = { left: false, right: false, accel: false, brake: false };
-        let serverUrl = 'ws://localhost:3000';
-fetch('config.json').then(r => r.json()).then(c => { if (c && c.serverUrl) serverUrl = c.serverUrl; }).catch(() => {});
+        // Adresse du serveur : voir config.js (vide = même adresse que la page).
+        const serverUrl = (typeof window.SERVER_URL === 'string' ? window.SERVER_URL : '').replace(/\/$/, '');
+
+        // Connexion Socket.io (comme la Dame de Pique), présentée avec la même interface
+        // qu'un WebSocket (send / readyState / onopen / onmessage / onclose).
+        function createConnection(url) {
+            const socket = io(url || undefined, {
+                transports: ['websocket', 'polling'],
+                upgradeTimeout: 10000,
+                timeout: 20000,
+                reconnection: true,
+                reconnectionAttempts: Infinity,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+            });
+            const conn = {
+                onopen: null, onmessage: null, onclose: null,
+                get readyState() { return socket.connected ? WebSocket.OPEN : WebSocket.CONNECTING; },
+                send(data) { socket.emit('msg', data); },
+                close() { socket.disconnect(); },
+            };
+            socket.on('connect', () => { if (conn.onopen) conn.onopen(); });
+            socket.on('msg', (data) => { if (conn.onmessage) conn.onmessage({ data }); });
+            socket.on('connect_error', (err) => {
+                document.getElementById('status').innerText = 'Erreur connexion serveur : ' + (err && err.message ? err.message : String(err));
+                console.error('Socket.io connect_error', err);
+            });
+            socket.on('disconnect', () => {
+                socket.disconnect(); // pas de reconnexion auto : on revient à l'écran de connexion
+                if (conn.onclose) conn.onclose();
+            });
+            return conn;
+        }
 function sectorColor(val, personalBest, overallBest) {
     if (val && overallBest && Math.abs(val - overallBest) < 0.005) return 'color:#9400d3;font-weight:bold;';
     if (val && personalBest && Math.abs(val - personalBest) < 0.005) return 'color:#00ff00;font-weight:bold;';
@@ -220,11 +265,31 @@ function sectorColor(val, personalBest, overallBest) {
         }
 
         // Page de connexion
-        document.getElementById('connectBtn').addEventListener('click', () => {
-            ws = new WebSocket(serverUrl);
+        const nicknameInput = document.getElementById('nicknameInput');
+        const connectBtn = document.getElementById('connectBtn');
+        const nicknameError = document.getElementById('nicknameError');
+        function updateConnectBtn() {
+            const ok = nicknameInput.value.trim().length > 0;
+            connectBtn.disabled = !ok;
+            connectBtn.style.opacity = ok ? '1' : '0.5';
+            connectBtn.style.cursor = ok ? 'pointer' : 'not-allowed';
+            if (ok) nicknameError.style.display = 'none';
+        }
+        nicknameInput.addEventListener('input', updateConnectBtn);
+        nicknameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connectBtn.click(); });
+        updateConnectBtn();
+
+        connectBtn.addEventListener('click', () => {
+            const nickname = nicknameInput.value.trim();
+            if (!nickname) {
+                nicknameError.style.display = 'block';
+                nicknameInput.focus();
+                return;
+            }
+            if (ws) ws.close();
+            ws = createConnection(serverUrl);
 
             ws.onopen = () => {
-                const nickname = document.getElementById('nicknameInput').value || 'Pilote';
                 const car = document.getElementById('carSelect').value || 'ferrari.png';
                 ws.send(JSON.stringify({ type: 'join', nickname, car }));
                 
@@ -246,9 +311,12 @@ function sectorColor(val, personalBest, overallBest) {
                         let statusColor = room.status === 'en course' ? '#e63946' : (room.status === 'en attente' ? '#ffcc00' : '#888');
                         let timeText = '';
                         if (room.status === 'en attente') {
-                            timeText = `<br><small style="color:#ffcc00">${Math.floor(room.timeLeft / 60)}:${(room.timeLeft % 60).toString().padStart(2, '0')}</small>`;
+                            timeText = ` · ${Math.floor(room.timeLeft / 60)}:${(room.timeLeft % 60).toString().padStart(2, '0')}`;
                         }
-                        btn.innerHTML = `Salle ${room.id + 1}<br><small style="color:${statusColor}">${room.status.toUpperCase()}</small>${timeText}<br><small>${room.count}/10</small><br><small style="font-size:10px">${playersText}</small>`;
+                        btn.innerHTML = `<span>Salle ${room.id + 1}</span><small style="color:${statusColor}">${room.status.toUpperCase()}${timeText}</small><small>${room.count}/10</small><span class="room-players"></span>`;
+                        const playersSpan = btn.querySelector('.room-players');
+                        playersSpan.textContent = playersText;
+                        playersSpan.title = playersText;
                         btn.onclick = () => {
                             ws.send(JSON.stringify({ type: 'joinRoom', roomId: room.id }));
                             currentRoom = room.id;

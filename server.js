@@ -1,22 +1,32 @@
+const express = require('express');
 const http = require('http');
-const WebSocket = require('ws');
+const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const cors = require('cors');
 
-const server = http.createServer((req, res) => {
-    let filePath = path.join(__dirname, 'www', req.url === '/' ? 'index.html' : req.url);
-    fs.readFile(filePath, (err, data) => {
-        if (err) {
-            res.writeHead(404);
-            res.end('Not found');
-            return;
-        }
-        res.writeHead(200);
-        res.end(data);
-    });
+// Même mode de connexion que la Dame de Pique : Express sert les fichiers du jeu
+// et Socket.io (HTTP, websocket + polling) transporte les messages.
+const app = express();
+app.use(cors());
+app.use(express.static(path.join(__dirname, 'www'), {
+    etag: false,
+    maxAge: 0,
+    setHeaders: (res) => {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    }
+}));
+
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: { origin: '*', methods: ['GET', 'POST'] },
+    transports: ['websocket', 'polling'],
+    allowEIO3: true,
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    upgradeTimeout: 10000,
+    maxHttpBufferSize: 1000000,
 });
-
-const wss = new WebSocket.Server({ server });
 
 const scale = 4;
 const MAX_PLAYERS = 10;
@@ -298,25 +308,32 @@ function startRacePhase(room) {
     room.readyStartTime = null;
 }
 
-wss.on('connection', (ws) => {
+io.on('connection', (socket) => {
     const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
     console.log(`Joueur connecté : ${playerId}`);
-    playerWs[playerId] = ws;
+    // Les messages restent des chaînes JSON, envoyées sur l'événement 'msg'.
+    const ws = { send: (payload) => socket.emit('msg', payload) };
+    playerWs[playerId] = socket;
 
     let currentRoom = null;
     let nickname = 'Pilote';
+    let hasNickname = false;
     let carImage = 'ferrari.png';
 
-    ws.on('message', (message) => {
+    socket.on('msg', (message) => {
         try {
             const data = JSON.parse(message);
             
             if (data.type === 'join') {
-                nickname = data.nickname || 'Pilote';
+                const nick = typeof data.nickname === 'string' ? data.nickname.trim().slice(0, 20) : '';
+                if (!nick) return; // surnom obligatoire
+                nickname = nick;
+                hasNickname = true;
                 if (data.car) carImage = data.car;
             }
-            
+
             if (data.type === 'joinRoom') {
+                if (!hasNickname) return; // pas de salle sans surnom
                 let roomId = data.roomId;
                 if (roomId < 0 || roomId >= ROOM_COUNT) return;
                 
@@ -497,7 +514,7 @@ wss.on('connection', (ws) => {
         } catch (e) {}
     });
 
-    ws.on('close', () => {
+    socket.on('disconnect', () => {
         console.log(`Joueur déconnecté : ${playerId}`);
         if (currentRoom !== null && rooms[currentRoom]) {
             let roomId = currentRoom;
@@ -558,7 +575,7 @@ setInterval(() => {
             const lightsCount = Math.min(5, Math.floor(lightsElapsed / 1000) + 1);
             const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft: 0, raceTimeLeft: 0, readyTimeLeft: 0, lightsCount, lightsOutTime: room.lightsOutTime, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0 });
             for (let pid of playerIds) {
-                if (playerWs[pid] && playerWs[pid].readyState === WebSocket.OPEN) playerWs[pid].send(payload);
+                if (playerWs[pid] && playerWs[pid].connected) playerWs[pid].emit('msg', payload);
             }
             continue;
         }
@@ -567,7 +584,7 @@ setInterval(() => {
             const readyTimeLeft = Math.max(0, room.readyDuration - (Date.now() - room.readyStartTime));
             const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft: 0, raceTimeLeft: 0, readyTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0 });
             for (let pid of playerIds) {
-                if (playerWs[pid] && playerWs[pid].readyState === WebSocket.OPEN) playerWs[pid].send(payload);
+                if (playerWs[pid] && playerWs[pid].connected) playerWs[pid].emit('msg', payload);
             }
             continue;
         }
@@ -833,8 +850,8 @@ const raceTimeLeft = room.phase === 'race' ? (Date.now() - room.raceStartTime) :
 const readyTimeLeft = room.phase === 'ready' ? Math.max(0, room.readyDuration - (Date.now() - room.readyStartTime)) : 0;
 const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, readyTimeLeft, lightsCount: room.phase === 'lights' ? 5 : (room.lightsOutTime ? 5 : 0), lightsOutTime: room.lightsOutTime, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0 });
         for (let pid of playerIds) {
-            if (playerWs[pid] && playerWs[pid].readyState === WebSocket.OPEN) {
-                playerWs[pid].send(payload);
+            if (playerWs[pid] && playerWs[pid].connected) {
+                playerWs[pid].emit('msg', payload);
             }
         }
     }
@@ -865,8 +882,8 @@ setInterval(() => {
     
     const payload = JSON.stringify({ type: 'roomList', rooms: roomList, circuitLeaderboards: circuitLeaderboards });
     for (let pid in playerWs) {
-        if (playerWs[pid] && playerWs[pid].readyState === WebSocket.OPEN) {
-            playerWs[pid].send(payload);
+        if (playerWs[pid] && playerWs[pid].connected) {
+            playerWs[pid].emit('msg', payload);
         }
     }
 }, 2000);
@@ -891,21 +908,24 @@ setInterval(() => {
         });
         
         for (let pid of playerIds) {
-            if (playerWs[pid] && playerWs[pid].readyState === WebSocket.OPEN) {
-                playerWs[pid].send(payload);
+            if (playerWs[pid] && playerWs[pid].connected) {
+                playerWs[pid].emit('msg', payload);
             }
         }
     }
 }, 1000);
 
-let serverConfig = { port: 3000, host: 'localhost' };
+let serverConfig = { port: 3002, host: 'localhost' };
 try {
     const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'www', 'config.json'), 'utf8'));
     if (cfg && cfg.port) serverConfig.port = cfg.port;
     if (cfg && cfg.host) serverConfig.host = cfg.host;
 } catch (e) {}
-server.listen(serverConfig.port, serverConfig.host, () => {
-    console.log(`Serveur multijoueur avec salles démarré sur http://${serverConfig.host}:${serverConfig.port}`);
+// On écoute sur toutes les interfaces : "host" dans config.json est l'adresse publique
+// utilisée par les clients, pas forcément une adresse de cette machine.
+const LISTEN_HOST = process.env.HOST || '0.0.0.0';
+server.listen(serverConfig.port, LISTEN_HOST, () => {
+    console.log(`Serveur multijoueur avec salles démarré sur ${LISTEN_HOST}:${serverConfig.port} (adresse client : ${serverConfig.host})`);
 });
 
 
