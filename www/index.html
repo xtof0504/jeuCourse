@@ -31,6 +31,30 @@
             .room-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; margin: 8px 0; }
             .room-btn { font-size: 13px; padding: 6px 4px; }
         }
+        #connectionScreen { justify-content: safe center; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; box-sizing: border-box; }
+        .connect-form { display: flex; flex-direction: column; align-items: stretch; width: 100%; max-width: 340px; gap: 6px; }
+        .connect-form h1 { margin: 0 0 8px; }
+        .connect-form label { font-size: 16px; text-align: left; margin-top: 6px; }
+        .connect-form input, .connect-form select { width: 100%; max-width: none; margin: 0; padding: 12px; font-size: 16px; border-radius: 8px; border: none; box-sizing: border-box; text-align: center; }
+        .connect-form .error { display: none; color: #e63946; font-size: 14px; margin: 0; text-align: center; }
+        .connect-form .menu-btn { margin: 14px 0 0; touch-action: manipulation; }
+        .connect-form .menu-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        @media (max-height: 500px), (max-width: 500px) {
+            .connect-form h1 { font-size: 24px; margin-bottom: 4px; }
+            .connect-form label { font-size: 14px; margin-top: 2px; }
+            .connect-form input, .connect-form select { padding: 9px; }
+            .connect-form .menu-btn { font-size: 17px; padding: 11px 24px; margin-top: 8px; }
+        }
+        /* Téléphone en paysage : surnom et voiture côte à côte pour tenir sans défiler */
+        @media (max-height: 500px) and (min-width: 560px) {
+            .connect-form { max-width: 560px; display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; row-gap: 4px; }
+            .connect-form h1, .connect-form .error, .connect-form .menu-btn { grid-column: 1 / -1; }
+            .connect-form label[for="nicknameInput"] { grid-column: 1; grid-row: 2; }
+            .connect-form label[for="carSelect"] { grid-column: 2; grid-row: 2; }
+            .connect-form input { grid-column: 1; grid-row: 3; }
+            .connect-form select { grid-column: 2; grid-row: 3; }
+            .connect-form .menu-btn { justify-self: center; min-width: 200px; }
+        }
         .player-list { margin: 20px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 10px; min-width: 250px; }
         .player-list div { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
     </style>
@@ -60,13 +84,15 @@
 
     <!-- Page de connexion -->
     <div id="connectionScreen">
-        <h1>MONZA MULTIJOUEUR</h1>
-        <p>Entrez votre surnom :</p>
-        <input type="text" id="nicknameInput" placeholder="Votre surnom" maxlength="20" autocomplete="off">
-        <p id="nicknameError" style="display:none;color:#e63946;margin:-12px 0 12px;">Le surnom est obligatoire.</p>
-        <p>Choisissez votre voiture :</p>
-        <select id="carSelect" style="padding:10px;font-size:16px;margin-bottom:20px;border-radius:8px;"></select>
-        <button class="menu-btn" id="connectBtn">CONNEXION</button>
+        <div class="connect-form">
+            <h1>MONZA MULTIJOUEUR</h1>
+            <label for="nicknameInput">Votre surnom :</label>
+            <input type="text" id="nicknameInput" placeholder="Votre surnom" maxlength="20" autocomplete="off" autocapitalize="words" enterkeyhint="go">
+            <label for="carSelect">Votre voiture :</label>
+            <select id="carSelect"></select>
+            <p id="nicknameError" class="error">Le surnom est obligatoire.</p>
+            <button class="menu-btn" id="connectBtn">CONNEXION</button>
+        </div>
     </div>
 
     <!-- Choix de la salle -->
@@ -276,6 +302,10 @@ function sectorColor(val, personalBest, overallBest) {
             if (ok) nicknameError.style.display = 'none';
         }
         nicknameInput.addEventListener('input', updateConnectBtn);
+        // Quand le clavier du téléphone s'ouvre, garder le champ visible
+        nicknameInput.addEventListener('focus', () => {
+            setTimeout(() => nicknameInput.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
+        });
         nicknameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connectBtn.click(); });
         updateConnectBtn();
 
@@ -531,10 +561,10 @@ function sectorColor(val, personalBest, overallBest) {
             if (idxs[0] === idxs[1]) idxs[1] = Math.min(n - 1, idxs[1] + 1);
             return idxs;
         }
-        function drawTrack() {
-            ctx.fillStyle = '#2b7a0b';
-            ctx.fillRect(-5000, -5000, 15000, 15000);
+        // Zoom de la caméra pendant la course (1 = taille réelle, 0.25 = 4 fois moins zoomé)
+        const CAMERA_ZOOM = 1 / 1.5;
 
+        function drawTrack() {
             // roadWidth global
 
             const pts = trackPoints || [];
@@ -640,12 +670,18 @@ function sectorColor(val, personalBest, overallBest) {
 
             ctx.restore();
 
+            // Surnom au-dessus de la voiture, à taille constante à l'écran quel que soit le zoom
             ctx.save();
-            ctx.translate(car.x, car.y - 35);
+            ctx.translate(car.x, car.y);
+            ctx.scale(1 / CAMERA_ZOOM, 1 / CAMERA_ZOOM);
             ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 14px Arial';
+            ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+            ctx.lineWidth = 3;
+            ctx.font = 'bold 13px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText(p.nickname || 'Pilote', 0, 0);
+            const labelY = -(60 * CAMERA_ZOOM) - 8;
+            ctx.strokeText(p.nickname || 'Pilote', 0, labelY);
+            ctx.fillText(p.nickname || 'Pilote', 0, labelY);
             ctx.restore();
         }
 
@@ -654,8 +690,14 @@ function sectorColor(val, personalBest, overallBest) {
 
             if (myId && players[myId]) {
                 let me = players[myId];
+                // Herbe sur tout l'écran (indépendant du zoom)
+                ctx.fillStyle = '#2b7a0b';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.save();
-                ctx.translate(canvas.width / 2 - me.car.x, canvas.height / 2 - me.car.y);
+                // Caméra centrée sur ma voiture, avec zoom
+                ctx.translate(canvas.width / 2, canvas.height / 2);
+                ctx.scale(CAMERA_ZOOM, CAMERA_ZOOM);
+                ctx.translate(-me.car.x, -me.car.y);
 
                 drawTrack();
 
