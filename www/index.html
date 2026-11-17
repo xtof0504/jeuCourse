@@ -57,6 +57,41 @@
         }
         .player-list { margin: 20px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 10px; min-width: 250px; }
         .player-list div { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        /* Salle d'attente */
+        #lobbyScreen { justify-content: safe center; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; box-sizing: border-box; }
+        .lobby-box { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 420px; }
+        .lobby-header h1 { margin: 0 0 6px; }
+        .lobby-info { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 16px; font-size: 16px; }
+        .lobby-info #lobbyTimer { color: #ffcc00; font-weight: bold; }
+        .lobby-side { display: flex; flex-direction: column; gap: 6px; }
+        .lobby-side label { font-size: 15px; }
+        .lobby-side select { width: 100%; padding: 11px; font-size: 16px; border-radius: 8px; border: none; box-sizing: border-box; }
+        .lobby-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+        .lobby-actions .menu-btn { margin: 0; width: 100%; font-size: 17px; padding: 12px 16px; touch-action: manipulation; }
+        .lobby-players-wrap { display: flex; flex-direction: column; min-height: 0; }
+        .lobby-players-title { font-size: 14px; color: #ccc; margin-bottom: 4px; }
+        #lobbyPlayers { margin: 0; padding: 6px 12px; min-width: 0; max-height: 40vh; overflow-y: auto; }
+        #lobbyPlayers div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        /* En portrait la liste des joueurs passe avant les boutons */
+        .lobby-header { order: 0; } .lobby-players-wrap { order: 1; } .lobby-side { order: 2; }
+        @media (max-height: 500px), (max-width: 500px) {
+            .lobby-header h1 { font-size: 22px; margin-bottom: 2px; }
+            .lobby-info { font-size: 14px; }
+            .lobby-actions .menu-btn { font-size: 15px; padding: 10px 12px; }
+            #lobbyPlayers div { padding: 3px 0; font-size: 14px; }
+        }
+        /* Téléphone en paysage : réglages + boutons à gauche, joueurs à droite */
+        @media (max-height: 500px) and (min-width: 560px) {
+            #lobbyScreen { padding: 10px 16px; }
+            .lobby-box { max-width: 720px; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; column-gap: 16px; row-gap: 8px; }
+            .lobby-header { grid-column: 1 / -1; display: flex; align-items: baseline; justify-content: center; gap: 16px; flex-wrap: wrap; }
+            .lobby-header h1 { margin: 0; }
+            .lobby-side { grid-column: 1; grid-row: 2; }
+            .lobby-players-wrap { grid-column: 2; grid-row: 2; }
+            .lobby-actions { flex-direction: row; }
+            .lobby-actions .menu-btn { font-size: 13px; padding: 10px 8px; }
+            #lobbyPlayers { max-height: calc(100vh - 110px); }
+        }
     </style>
 </head>
 <body>
@@ -124,14 +159,27 @@
 
     <!-- Salle d'attente -->
     <div id="lobbyScreen" style="display: none;">
-        <h1>SALLE D'ATTENTE</h1>
-        <p id="lobbyRoomId">Salle 1</p>
-        <p id="lobbyTimer">Temps restant: 5:00</p>
-        <p>Circuit :</p>
-        <select id="circuitSelect" style="padding:10px;font-size:16px;margin-bottom:10px;border-radius:8px;"></select>
-        <div class="player-list" id="lobbyPlayers"></div>
-        <button class="menu-btn" id="startGameBtn">DÉMARRER LA COURSE</button>
-        <button class="menu-btn" id="leaveRoomBtn" style="background: #e63946; color: white;">QUITTER LA SALLE</button>
+        <div class="lobby-box">
+            <div class="lobby-header">
+                <h1>SALLE D'ATTENTE</h1>
+                <div class="lobby-info">
+                    <span id="lobbyRoomId">Salle 1</span>
+                    <span id="lobbyTimer">Temps restant: 5:00</span>
+                </div>
+            </div>
+            <div class="lobby-side">
+                <label for="circuitSelect">Circuit :</label>
+                <select id="circuitSelect"></select>
+                <div class="lobby-actions">
+                    <button class="menu-btn" id="startGameBtn">DÉMARRER LA COURSE</button>
+                    <button class="menu-btn" id="leaveRoomBtn" style="background: #e63946; color: white;">QUITTER LA SALLE</button>
+                </div>
+            </div>
+            <div class="lobby-players-wrap">
+                <div class="lobby-players-title">Joueurs</div>
+                <div class="player-list" id="lobbyPlayers"></div>
+            </div>
+        </div>
     </div>
 
     <script src="config.js"></script>
@@ -375,15 +423,14 @@ function sectorColor(val, personalBest, overallBest) {
                         roadWidth = (data.circuit === 'Monaco Grand Prix') ? 123 : 300;
                     }
                     
-                    let playersHtml = '';
-                    if (data.players && data.players.length > 0) {
-                        data.players.forEach(p => {
-                            playersHtml += `<div>${p.nickname}</div>`;
-                        });
-                    } else {
-                        playersHtml = '<div>Aucun joueur</div>';
-                    }
-                    document.getElementById('lobbyPlayers').innerHTML = playersHtml;
+                    const lobbyPlayers = document.getElementById('lobbyPlayers');
+                    lobbyPlayers.innerHTML = '';
+                    const names = (data.players && data.players.length > 0) ? data.players.map(p => p.nickname) : ['Aucun joueur'];
+                    names.forEach(name => {
+                        const row = document.createElement('div');
+                        row.textContent = name; // textContent : un surnom ne peut pas injecter de HTML
+                        lobbyPlayers.appendChild(row);
+                    });
                     
                     if (data.leaderboard && data.leaderboard.length > 0) {
                         let lbHtml = '';
@@ -563,6 +610,82 @@ function sectorColor(val, personalBest, overallBest) {
         }
         // Zoom de la caméra pendant la course (1 = taille réelle, 0.25 = 4 fois moins zoomé)
         const CAMERA_ZOOM = 1 / 1.5;
+        // Position fixe de ma voiture à l'écran : centrée horizontalement, en bas (fraction de la hauteur)
+        const CAMERA_CAR_Y = 0.75;
+        // Rotation actuelle de la caméra (le décor tourne pour que ma voiture pointe toujours vers le haut)
+        let cameraAngle = 0;
+
+        // Texture d'asphalte : fond gris moucheté de points gris clair et gris foncé.
+        // Générée une seule fois puis répétée sur toute la route (elle suit le décor quand il tourne).
+        let asphaltPattern = null;
+        function getAsphaltPattern() {
+            if (asphaltPattern) return asphaltPattern;
+            const size = 128;
+            const tile = document.createElement('canvas');
+            tile.width = tile.height = size;
+            const t = tile.getContext('2d');
+            t.fillStyle = '#5a5a5a';
+            t.fillRect(0, 0, size, size);
+            const dots = [
+                { color: '#3a3a3a', count: 260 }, // gris foncé
+                { color: '#7c7c7c', count: 220 }, // gris clair
+                { color: '#9a9a9a', count: 60 }   // quelques points plus clairs
+            ];
+            dots.forEach(d => {
+                t.fillStyle = d.color;
+                for (let i = 0; i < d.count; i++) {
+                    const r = 0.8 + Math.random() * 1.6;
+                    const x = Math.random() * size;
+                    const y = Math.random() * size;
+                    // Dessiné aussi de l'autre côté des bords pour que la texture se raccorde sans couture
+                    for (const ox of [-size, 0, size]) {
+                        for (const oy of [-size, 0, size]) {
+                            t.beginPath();
+                            t.arc(x + ox, y + oy, r, 0, Math.PI * 2);
+                            t.fill();
+                        }
+                    }
+                }
+            });
+            asphaltPattern = ctx.createPattern(tile, 'repeat');
+            return asphaltPattern;
+        }
+
+        // Texture d'herbe : fond vert avec des brins d'herbe de plusieurs teintes.
+        let grassPattern = null;
+        function getGrassPattern() {
+            if (grassPattern) return grassPattern;
+            const size = 256;
+            const tile = document.createElement('canvas');
+            tile.width = tile.height = size;
+            const t = tile.getContext('2d');
+            t.fillStyle = '#2b7a0b';
+            t.fillRect(0, 0, size, size);
+            // Taches douces pour casser l'uniformité
+            for (let i = 0; i < 40; i++) {
+                const x = Math.random() * size, y = Math.random() * size, r = 10 + Math.random() * 25;
+                t.fillStyle = Math.random() < 0.5 ? 'rgba(20,80,5,0.18)' : 'rgba(80,150,30,0.15)';
+                for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
+                    t.beginPath(); t.arc(x + ox, y + oy, r, 0, Math.PI * 2); t.fill();
+                }
+            }
+            // Brins d'herbe : petits traits presque verticaux, verts foncés et clairs
+            const greens = ['#1f5e08', '#246b09', '#358f12', '#3fa016', '#4cb01e', '#1a5206'];
+            t.lineCap = 'round';
+            for (let i = 0; i < 1400; i++) {
+                const x = Math.random() * size, y = Math.random() * size;
+                const len = 3 + Math.random() * 6;
+                const a = -Math.PI / 2 + (Math.random() - 0.5) * 0.9;
+                const dx = Math.cos(a) * len, dy = Math.sin(a) * len;
+                t.strokeStyle = greens[(Math.random() * greens.length) | 0];
+                t.lineWidth = 0.8 + Math.random() * 0.8;
+                for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
+                    t.beginPath(); t.moveTo(x + ox, y + oy); t.lineTo(x + ox + dx, y + oy + dy); t.stroke();
+                }
+            }
+            grassPattern = ctx.createPattern(tile, 'repeat');
+            return grassPattern;
+        }
 
         function drawTrack() {
             // roadWidth global
@@ -584,7 +707,7 @@ function sectorColor(val, personalBest, overallBest) {
             ctx.stroke();
 
             ctx.lineWidth = roadWidth;
-            ctx.strokeStyle = '#444';
+            ctx.strokeStyle = getAsphaltPattern() || '#555';
             ctx.stroke();
 
             const p0 = pts[0];
@@ -673,6 +796,7 @@ function sectorColor(val, personalBest, overallBest) {
             // Surnom au-dessus de la voiture, à taille constante à l'écran quel que soit le zoom
             ctx.save();
             ctx.translate(car.x, car.y);
+            ctx.rotate(cameraAngle); // annule la rotation du décor : le surnom reste droit
             ctx.scale(1 / CAMERA_ZOOM, 1 / CAMERA_ZOOM);
             ctx.fillStyle = '#ffffff';
             ctx.strokeStyle = 'rgba(0,0,0,0.7)';
@@ -694,10 +818,19 @@ function sectorColor(val, personalBest, overallBest) {
                 ctx.fillStyle = '#2b7a0b';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.save();
-                // Caméra centrée sur ma voiture, avec zoom
-                ctx.translate(canvas.width / 2, canvas.height / 2);
+                // Caméra embarquée : ma voiture reste fixe en bas au centre, pointée vers le haut ;
+                // c'est le décor qui tourne et défile autour d'elle.
+                cameraAngle = me.car.angle || 0;
+                ctx.translate(canvas.width / 2, canvas.height * CAMERA_CAR_Y);
                 ctx.scale(CAMERA_ZOOM, CAMERA_ZOOM);
+                ctx.rotate(-cameraAngle);
                 ctx.translate(-me.car.x, -me.car.y);
+
+                // Herbe texturée dans le repère du circuit (elle défile et tourne avec le décor).
+                // Le carré couvre tout l'écran quelle que soit la rotation.
+                const grassHalf = Math.hypot(canvas.width, canvas.height) / CAMERA_ZOOM;
+                ctx.fillStyle = getGrassPattern();
+                ctx.fillRect(me.car.x - grassHalf, me.car.y - grassHalf, grassHalf * 2, grassHalf * 2);
 
                 drawTrack();
 
