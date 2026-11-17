@@ -1,17 +1,17 @@
 [
   {
+    "id": "player_8z4wkckh7",
+    "nickname": "Xtof",
+    "time": 29.203,
+    "circuit": "Italian Grand Prix",
+    "date": "2026-11-17"
+  },
+  {
     "id": "player_3mecnyh6h",
     "nickname": "Pilote",
     "time": 29.871,
     "circuit": "Italian Grand Prix",
     "date": "2026-11-05"
-  },
-  {
-    "id": "player_8z4wkckh7",
-    "nickname": "Xtof",
-    "time": 31.971,
-    "circuit": "Italian Grand Prix",
-    "date": "2026-11-17"
   },
   {
     "id": "player_mjxghbl3n",
