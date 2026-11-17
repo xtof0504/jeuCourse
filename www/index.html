@@ -8,7 +8,13 @@
         * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #111; font-family: Arial, sans-serif; color: white; }
         #gameCanvas { display: block; background: #2b7a0b; }
-        #ui { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; text-shadow: 2px 2px #000; pointer-events: none; z-index: 5; }
+        #lastLapBar { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; padding: 4px 8px; background: rgba(0,0,0,0.6); pointer-events: none; z-index: 6; box-sizing: border-box; }
+        .llb-cell { flex: 1 1 0; max-width: 170px; min-width: 0; display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+        .llb-label { font-size: 10px; font-weight: bold; color: #ffcc00; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        .llb-value { font-size: 18px; font-weight: bold; color: #fff; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .llb-cell:first-child .llb-value { font-size: 20px; }
+        @media (max-width: 400px) { .llb-value { font-size: 15px; } .llb-cell:first-child .llb-value { font-size: 16px; } .llb-label { font-size: 9px; } }
+        #ui { position: absolute; top: 46px; left: 10px; right: 10px; display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; text-shadow: 2px 2px #000; pointer-events: none; z-index: 5; }
         #controls { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 20px; pointer-events: none; z-index: 5; }
         .control-group { display: flex; gap: 15px; pointer-events: auto; }
         .btn { width: 80px; height: 80px; background: rgba(255, 255, 255, 0.3); border: 3px solid white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; color: white; touch-action: manipulation; }
@@ -95,8 +101,15 @@
     </style>
 </head>
 <body>
+    <!-- Dernier tour : temps total et des 3 secteurs, tout en haut de l'écran -->
+    <div id="lastLapBar">
+        <div class="llb-cell"><span class="llb-label">DERNIER TOUR</span><span class="llb-value" id="llbLap">--</span></div>
+        <div class="llb-cell"><span class="llb-label">S1</span><span class="llb-value" id="llbS1">--</span></div>
+        <div class="llb-cell"><span class="llb-label">S2</span><span class="llb-value" id="llbS2">--</span></div>
+        <div class="llb-cell"><span class="llb-label">S3</span><span class="llb-value" id="llbS3">--</span></div>
+    </div>
     <div id="ui">
-        <div id="speedometer">Vitesse: 0 km/h</div>
+        <div id="speedometer" style="visibility:hidden;">Vitesse: 0 km/h</div>
         <div id="chrono" style="font-size: 14px; text-align: center;">Tour: 0.00s<br>Dernier: -- | Meilleur: --</div>
         <div id="leaderboard" style="font-size: 14px; text-align: center;">
             <div id="leaderboardList">En attente...</div>
@@ -140,7 +153,7 @@
     </div>
 
     <!-- Feux de départ -->
-    <div id="lightsScreen" style="display:none;position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);padding:8px;border-radius:8px;z-index:15;">
+    <div id="lightsScreen" style="display:none;position:absolute;top:50px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);padding:8px;border-radius:8px;z-index:15;">
         <div style="display:flex;gap:8px;">
             <div class="light" style="width:20px;height:20px;border-radius:50%;background:#333;"></div>
             <div class="light" style="width:20px;height:20px;border-radius:50%;background:#333;"></div>
@@ -237,6 +250,44 @@ function sectorColor(val, personalBest, overallBest) {
     if (val && overallBest && Math.abs(val - overallBest) < 0.005) return 'color:#9400d3;font-weight:bold;';
     if (val && personalBest && Math.abs(val - personalBest) < 0.005) return 'color:#00ff00;font-weight:bold;';
     return '';
+}
+
+// Temps au format 1:23.45 (ou 23.45 sous la minute)
+function formatTime(t) {
+    if (!t || t <= 0) return '--';
+    if (t < 60) return t.toFixed(2);
+    const m = Math.floor(t / 60);
+    const s = t - m * 60;
+    return `${m}:${s.toFixed(2).padStart(5, '0')}`;
+}
+
+// Barre du haut : dernier tour et temps de chaque secteur (violet = meilleur de la salle, vert = meilleur perso).
+// Chaque temps de secteur s'affiche dès que le secteur est bouclé, et s'efface quand la voiture
+// entre à nouveau dans ce secteur :
+//   - passage de la ligne (entrée en S1) : S1 effacé, S3 et le tour mis à jour
+//   - fin de S1 (entrée en S2)           : S1 affiché, S2 effacé
+//   - fin de S2 (entrée en S3)           : S2 affiché, S3 effacé
+function updateLastLapBar(race, data) {
+    const doneS1 = race.split1Time > 0;                 // secteur 1 bouclé sur ce tour
+    const doneS2 = doneS1 && race.split2Time > 0;       // secteur 2 bouclé sur ce tour
+    const s1 = doneS1 ? race.split1Time : 0;                                  // en S1 : effacé
+    const s2 = doneS2 ? race.split2Time - race.split1Time : (doneS1 ? 0 : race.lastS2Time); // en S2 : effacé
+    const s3 = doneS2 ? 0 : race.lastS3Time;                                  // en S3 : effacé
+    const cells = [
+        ['llbLap', race.lastLapTime, race.bestTime, null],
+        ['llbS1', s1, race.bestS1Time, data.bestQualifS1Time],
+        ['llbS2', s2, race.bestS2Time, data.bestQualifS2Time],
+        ['llbS3', s3, race.bestS3Time, data.bestQualifS3Time]
+    ];
+    cells.forEach(([id, val, personal, overall]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = formatTime(val);
+        let color = '#fff';
+        if (val && overall && Math.abs(val - overall) < 0.005) color = '#c15cff';
+        else if (val && personal && Math.abs(val - personal) < 0.005) color = '#00ff00';
+        el.style.color = color;
+    });
 }
 
         const carImg = new Image();
@@ -486,6 +537,7 @@ function sectorColor(val, personalBest, overallBest) {
                     if (myId && players[myId]) {
                         let me = players[myId];
                         document.getElementById('speedometer').innerText = `Vitesse: ${me.speedKmh} km/h`;
+                        updateLastLapBar(me.race || {}, data);
                         
                         if (data.phase === 'qualif') {
                             let mins = Math.floor(data.qualifTimeLeft / 60000);
@@ -687,6 +739,76 @@ function sectorColor(val, personalBest, overallBest) {
             return grassPattern;
         }
 
+        // Vibreurs rouge et blanc à l'intérieur des virages.
+        // Le circuit est une ligne brisée : chaque sommet où la piste tourne d'au moins KERB_MIN_TURN
+        // reçoit un vibreur le long du bord intérieur, un peu avant et un peu après le sommet.
+        const KERB_MIN_TURN = 12 * Math.PI / 180;
+        let kerbCache = { pts: null, width: 0, paths: [] };
+        function computeKerbs(rawPts, width) {
+            // Retirer les points en double (segments de longueur nulle)
+            const pts = [];
+            rawPts.forEach(p => {
+                const last = pts[pts.length - 1];
+                if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 1) pts.push(p);
+            });
+            if (pts.length > 2 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) <= 1) pts.pop();
+            const n = pts.length;
+            const kerbW = width * 0.09;
+            // Le bord extérieur du vibreur s'aligne sur le bord extérieur de la ligne blanche (+8)
+            const off = width / 2 + 8 - kerbW / 2;
+            const paths = [];
+            for (let i = 0; i < n; i++) {
+                const a = pts[(i - 1 + n) % n], v = pts[i], b = pts[(i + 1) % n];
+                const l1 = Math.hypot(v.x - a.x, v.y - a.y), l2 = Math.hypot(b.x - v.x, b.y - v.y);
+                const d1 = { x: (v.x - a.x) / l1, y: (v.y - a.y) / l1 };
+                const d2 = { x: (b.x - v.x) / l2, y: (b.y - v.y) / l2 };
+                const cross = d1.x * d2.y - d1.y * d2.x;
+                const turn = Math.acos(Math.max(-1, Math.min(1, d1.x * d2.x + d1.y * d2.y)));
+                if (turn < KERB_MIN_TURN || turn > Math.PI * 0.95) continue;
+                const s = cross > 0 ? 1 : -1; // côté intérieur du virage
+                const n1 = { x: -d1.y * s, y: d1.x * s }, n2 = { x: -d2.y * s, y: d2.x * s };
+                // Point où les deux bords intérieurs se croisent
+                const k = off / (1 + n1.x * n2.x + n1.y * n2.y);
+                const corner = { x: v.x + (n1.x + n2.x) * k, y: v.y + (n1.y + n2.y) * k };
+                // Longueur du vibreur de part et d'autre : plus le virage est serré, plus il est long
+                const cut = off * Math.tan(turn / 2);
+                const extra = width * (0.6 + 1.6 * turn / Math.PI);
+                const L1 = Math.min(cut + extra, l1 * 0.5 + cut);
+                const L2 = Math.min(cut + extra, l2 * 0.5 + cut);
+                if (L1 <= cut || L2 <= cut) continue;
+                paths.push([
+                    { x: v.x - d1.x * L1 + n1.x * off, y: v.y - d1.y * L1 + n1.y * off },
+                    corner,
+                    { x: v.x + d2.x * L2 + n2.x * off, y: v.y + d2.y * L2 + n2.y * off }
+                ]);
+            }
+            return { pts: rawPts, width, paths, kerbW };
+        }
+        function drawKerbs(pts) {
+            if (kerbCache.pts !== pts || kerbCache.width !== roadWidth) kerbCache = computeKerbs(pts, roadWidth);
+            const kerbW = kerbCache.kerbW;
+            const dash = Math.max(16, roadWidth * 0.13);
+            ctx.save();
+            ctx.lineWidth = kerbW;
+            ctx.lineCap = 'butt';
+            ctx.lineJoin = 'miter';
+            ctx.miterLimit = 4;
+            kerbCache.paths.forEach(path => {
+                ctx.beginPath();
+                ctx.moveTo(path[0].x, path[0].y);
+                ctx.lineTo(path[1].x, path[1].y);
+                ctx.lineTo(path[2].x, path[2].y);
+                ctx.setLineDash([]);
+                ctx.strokeStyle = '#ffffff';
+                ctx.stroke();
+                ctx.setLineDash([dash, dash]);
+                ctx.strokeStyle = '#d61f1f';
+                ctx.stroke();
+            });
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+
         function drawTrack() {
             // roadWidth global
 
@@ -709,6 +831,8 @@ function sectorColor(val, personalBest, overallBest) {
             ctx.lineWidth = roadWidth;
             ctx.strokeStyle = getAsphaltPattern() || '#555';
             ctx.stroke();
+
+            drawKerbs(pts);
 
             const p0 = pts[0];
             const p1 = pts[1] || pts[0];
@@ -809,6 +933,42 @@ function sectorColor(val, personalBest, overallBest) {
             ctx.restore();
         }
 
+        // Vitesse affichée tout à gauche de l'écran, à la hauteur de ma voiture,
+        // mais toujours au-dessus des boutons ◀ ▶ pour ne pas être cachée sur smartphone.
+        function drawSpeedNextToCar(me) {
+            const W = canvas.width, H = canvas.height;
+            const speed = Math.round(me.speedKmh || 0);
+            // Taille adaptée à l'écran : lisible sur un petit téléphone sans être énorme sur une tablette
+            const big = Math.round(Math.max(26, Math.min(52, Math.min(W, H) * 0.11)));
+            const small = Math.round(big * 0.42);
+            const padX = Math.round(big * 0.3), padY = Math.round(big * 0.18);
+            ctx.save();
+            ctx.textBaseline = 'alphabetic';
+            ctx.font = `bold ${big}px Arial`;
+            const boxW = Math.max(ctx.measureText('000').width, ctx.measureText(String(speed)).width) + padX * 2;
+            const boxH = big + small + padY * 3;
+            const x = 12; // marge depuis le bord gauche
+            // Les boutons de commande occupent le bas de l'écran (80 px + 20 px de marge)
+            const controlsTop = H - 100 - 10;
+            const carY = H * CAMERA_CAR_Y;
+            let y = Math.round(carY - boxH / 2);
+            if (y + boxH > controlsTop) y = controlsTop - boxH;
+            if (y < 50) y = 50; // ne pas chevaucher l'affichage du haut
+            // Fond semi-transparent pour rester lisible sur la route comme sur l'herbe
+            ctx.fillStyle = 'rgba(0,0,0,0.45)';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(x, y, boxW, boxH, 10); else ctx.rect(x, y, boxW, boxH);
+            ctx.fill();
+            ctx.textAlign = 'center';
+            const cx = x + boxW / 2;
+            ctx.fillStyle = me.onTrack === false ? '#e63946' : '#ffffff';
+            ctx.fillText(speed, cx, y + padY + big * 0.85);
+            ctx.font = `bold ${small}px Arial`;
+            ctx.fillStyle = '#ffcc00';
+            ctx.fillText('km/h', cx, y + padY * 2 + big * 0.85 + small);
+            ctx.restore();
+        }
+
         function loop() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -839,6 +999,8 @@ function sectorColor(val, personalBest, overallBest) {
                 }
 
                 ctx.restore();
+
+                drawSpeedNextToCar(me);
             }
 
             requestAnimationFrame(loop);
