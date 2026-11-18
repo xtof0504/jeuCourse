@@ -4,3 +4,7 @@ android/app/build/
 .gradle/
 .DS_Store
 *.apk
+
+# Classements écrits par le serveur pendant les parties (propres à chaque serveur)
+leaderboard.json
+circuitLeaderboards.json
