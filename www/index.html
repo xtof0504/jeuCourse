@@ -12,9 +12,41 @@
         .llb-cell { flex: 1 1 0; max-width: 170px; min-width: 0; display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
         .llb-label { font-size: 10px; font-weight: bold; color: #ffcc00; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
         .llb-value { font-size: 18px; font-weight: bold; color: #fff; font-variant-numeric: tabular-nums; white-space: nowrap; }
-        .llb-cell:first-child .llb-value { font-size: 20px; }
-        @media (max-width: 400px) { .llb-value { font-size: 15px; } .llb-cell:first-child .llb-value { font-size: 16px; } .llb-label { font-size: 9px; } }
-        #ui { position: absolute; top: 46px; left: 10px; right: 10px; display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; text-shadow: 2px 2px #000; pointer-events: none; z-index: 5; }
+        #llbLap { font-size: 20px; }
+        #qualifTimer { position: absolute; left: 6px; top: 3px; bottom: 3px; width: 64px; box-sizing: border-box; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; border-radius: 6px; background: rgba(230,57,70,0.85); }
+        /* Place réservée à gauche (et à droite, pour garder les temps centrés) quand le compte à rebours est affiché */
+        #lastLapBar.has-qualif { padding-left: 76px; padding-right: 76px; }
+        #qualifTimer .llb-label { color: #fff; }
+        #qualifTimer .llb-value { font-size: 20px; color: #fff; }
+        #qualifTimer.urgent { background: #ffcc00; }
+        #qualifTimer.urgent .llb-label, #qualifTimer.urgent .llb-value { color: #111; }
+        @media (max-width: 400px) { .llb-value { font-size: 15px; } #llbLap, #qualifTimer .llb-value { font-size: 16px; } .llb-label { font-size: 9px; } #qualifTimer { width: 52px; } #lastLapBar.has-qualif { padding-left: 62px; padding-right: 4px; } }
+        #ui { position: absolute; top: 46px; left: 8px; right: 8px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: start; gap: 8px; font-size: 13px; font-weight: bold; text-shadow: 1px 1px 2px #000; pointer-events: none; z-index: 5; }
+        #cutWarning { display: none; position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%); z-index: 7; pointer-events: none; padding: 10px 22px; border-radius: 10px; background: rgba(214,31,31,0.9); color: #fff; font-size: 26px; font-weight: bold; text-align: center; letter-spacing: 1px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+        #cutWarning small { display: block; font-size: 14px; font-weight: normal; letter-spacing: 0; }
+        .hud-panel { background: rgba(0,0,0,0.45); border-radius: 8px; padding: 4px 8px; line-height: 1.3; }
+        .hud-panel:empty { display: none; }
+        #status { grid-column: 1; } #chrono { grid-column: 2; } #leaderboard { grid-column: 3; }
+        #status { justify-self: start; min-width: 120px; max-width: 200px; font-size: 12px; }
+        #chrono { justify-self: center; text-align: center; }
+        #chrono .hud-phase { font-size: 11px; color: #ffcc00; letter-spacing: 0.5px; }
+        #chrono .hud-lap { font-size: 22px; font-variant-numeric: tabular-nums; }
+        #chrono .hud-best { font-size: 12px; font-weight: normal; }
+        #chrono .hud-gap { font-size: 16px; color: #ff8c42; font-variant-numeric: tabular-nums; }
+        #chrono .hud-gap span { font-size: 11px; color: #ddd; font-weight: normal; }
+        #leaderboard { justify-self: end; text-align: right; max-width: 200px; font-size: 12px; }
+        .hud-title { font-size: 10px; color: #ffcc00; letter-spacing: 0.5px; margin-bottom: 2px; }
+        .hud-row { display: flex; justify-content: space-between; gap: 10px; white-space: nowrap; }
+        .hud-row .hud-name { overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+        .hud-row .hud-time { font-variant-numeric: tabular-nums; }
+        .hud-row.me { color: #ffcc00; }
+        .hud-sep { text-align: center; opacity: 0.6; line-height: 0.8; }
+        @media (max-width: 500px) {
+            #ui { gap: 4px; left: 4px; right: 4px; }
+            #status, #leaderboard { max-width: 120px; min-width: 0; font-size: 11px; }
+            .hud-row .hud-name { max-width: 60px; }
+            #chrono .hud-lap { font-size: 18px; }
+        }
         #controls { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 20px; pointer-events: none; z-index: 5; }
         .control-group { display: flex; gap: 15px; pointer-events: auto; }
         .btn { width: 80px; height: 80px; background: rgba(255, 255, 255, 0.3); border: 3px solid white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; color: white; touch-action: manipulation; }
@@ -103,18 +135,23 @@
 <body>
     <!-- Dernier tour : temps total et des 3 secteurs, tout en haut de l'écran -->
     <div id="lastLapBar">
+        <!-- Compte à rebours de la qualification, tout à gauche (visible seulement en qualification) -->
+        <div id="qualifTimer" style="display:none;"><span class="llb-label">QUALIF</span><span class="llb-value" id="qualifTimerValue">--:--</span></div>
         <div class="llb-cell"><span class="llb-label">DERNIER TOUR</span><span class="llb-value" id="llbLap">--</span></div>
         <div class="llb-cell"><span class="llb-label">S1</span><span class="llb-value" id="llbS1">--</span></div>
         <div class="llb-cell"><span class="llb-label">S2</span><span class="llb-value" id="llbS2">--</span></div>
         <div class="llb-cell"><span class="llb-label">S3</span><span class="llb-value" id="llbS3">--</span></div>
     </div>
+    <!-- Message affiché quand le joueur a coupé le circuit (remis sur la piste par le serveur) -->
+    <div id="cutWarning">RACCOURCI !<small>Retour sur la piste</small></div>
+    <!-- Infos sous la barre des temps : classement (gauche), chrono (centre), record du circuit (droite) -->
     <div id="ui">
-        <div id="speedometer" style="visibility:hidden;">Vitesse: 0 km/h</div>
-        <div id="chrono" style="font-size: 14px; text-align: center;">Tour: 0.00s<br>Dernier: -- | Meilleur: --</div>
-        <div id="leaderboard" style="font-size: 14px; text-align: center;">
-            <div id="leaderboardList">En attente...</div>
+        <div id="speedometer" style="display:none;">Vitesse: 0 km/h</div>
+        <div id="status" class="hud-panel"></div>
+        <div id="chrono" class="hud-panel"></div>
+        <div id="leaderboard">
+            <div id="leaderboardList" class="hud-panel"></div>
         </div>
-        <div id="status">Statut: Déconnecté</div>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -252,6 +289,32 @@ function sectorColor(val, personalBest, overallBest) {
     return '';
 }
 
+// Dernier raccourci déjà signalé (undefined = pas encore reçu d'état du serveur)
+let lastCutSeen = undefined;
+let cutWarningTimer = null;
+
+// Échappe un texte (surnom) avant de l'insérer dans du HTML
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Record du circuit, en haut à droite (le meilleur temps uniquement, pour ne pas encombrer l'écran)
+function renderRecord(entries) {
+    const el = document.getElementById('leaderboardList');
+    if (!el) return;
+    if (!entries || entries.length === 0) { el.innerHTML = ''; return; }
+    const best = entries[0];
+    el.innerHTML = `<div class="hud-title">RECORD</div><div class="hud-row"><span class="hud-name">${escapeHtml(best.nickname || 'Pilote')}</span><span class="hud-time" style="color:#c15cff">${formatTime(best.time)}</span></div>`;
+}
+
+// Écart d'un joueur avec la voiture qui le précède : « +1.23 », « +1 tour », ou « Tête » pour le premier
+function formatGap(p) {
+    if (!p.racePos || p.racePos === 1) return 'Tête';
+    if (p.gapAheadLaps >= 1) return `+${p.gapAheadLaps} tour${p.gapAheadLaps > 1 ? 's' : ''}`;
+    if (p.gapAhead === null || p.gapAhead === undefined) return '--';
+    return '+' + p.gapAhead.toFixed(2);
+}
+
 // Temps au format 1:23.45 (ou 23.45 sous la minute)
 function formatTime(t) {
     if (!t || t <= 0) return '--';
@@ -274,7 +337,7 @@ function updateLastLapBar(race, data) {
     const s2 = doneS2 ? race.split2Time - race.split1Time : (doneS1 ? 0 : race.lastS2Time); // en S2 : effacé
     const s3 = doneS2 ? 0 : race.lastS3Time;                                  // en S3 : effacé
     const cells = [
-        ['llbLap', race.lastLapTime, race.bestTime, null],
+        ['llbLap', race.lastLapTime, race.bestTime, data.bestQualifLapTime],
         ['llbS1', s1, race.bestS1Time, data.bestQualifS1Time],
         ['llbS2', s2, race.bestS2Time, data.bestQualifS2Time],
         ['llbS3', s3, race.bestS3Time, data.bestQualifS3Time]
@@ -483,13 +546,7 @@ function updateLastLapBar(race, data) {
                         lobbyPlayers.appendChild(row);
                     });
                     
-                    if (data.leaderboard && data.leaderboard.length > 0) {
-                        let lbHtml = '';
-                        data.leaderboard.forEach((entry, i) => {
-                            lbHtml += `<div>${i + 1}. ${entry.nickname} - ${entry.time.toFixed(2)}s</div>`;
-                        });
-                        document.getElementById('leaderboardList').innerHTML = lbHtml;
-                    }
+                    if (data.leaderboard && data.leaderboard.length > 0) renderRecord(data.leaderboard);
                 } else                 if (data.type === 'state') {
                     // Cacher l'écran de lobby si la course a démarré
                     document.getElementById('lobbyScreen').style.display = 'none';
@@ -538,17 +595,51 @@ function updateLastLapBar(race, data) {
                         let me = players[myId];
                         document.getElementById('speedometer').innerText = `Vitesse: ${me.speedKmh} km/h`;
                         updateLastLapBar(me.race || {}, data);
+
+                        // Raccourci détecté par le serveur : message pendant 2 secondes
+                        if (me.lastCutAt && me.lastCutAt !== lastCutSeen) {
+                            const firstSeen = lastCutSeen === undefined;
+                            lastCutSeen = me.lastCutAt;
+                            if (!firstSeen) {
+                                const warn = document.getElementById('cutWarning');
+                                warn.style.display = 'block';
+                                clearTimeout(cutWarningTimer);
+                                cutWarningTimer = setTimeout(() => { warn.style.display = 'none'; }, 2000);
+                            }
+                        } else if (lastCutSeen === undefined) {
+                            lastCutSeen = me.lastCutAt || null;
+                        }
                         
+                        // Bloc chrono simplifié : le dernier tour et les secteurs sont dans la barre du haut
+                        const chronoEl = document.getElementById('chrono');
+                        const curLap = parseFloat(me.currentLapTime) || 0;
+                        // Compte à rebours de la qualification, en haut à gauche
+                        const qualifTimerEl = document.getElementById('qualifTimer');
                         if (data.phase === 'qualif') {
-                            let mins = Math.floor(data.qualifTimeLeft / 60000);
-                            let secs = Math.floor((data.qualifTimeLeft % 60000) / 1000);
-                            document.getElementById('chrono').innerHTML = `QUALIFICATION<br>Temps restant: ${mins}:${secs.toString().padStart(2,'0')}<br>Tour: ${me.currentLapTime}s (Prec: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s)<br>S1: <span style="${sectorColor(me.race.split1Time, me.race.bestS1Time, data.bestQualifS1Time)}">${me.race.split1Time ? me.race.split1Time.toFixed(2) : '--'}</span>s | S2: <span style="${sectorColor(me.race.split2Time && me.race.split1Time ? me.race.split2Time - me.race.split1Time : 0, me.race.bestS2Time, data.bestQualifS2Time)}">${me.race.split2Time && me.race.split1Time ? (me.race.split2Time - me.race.split1Time).toFixed(2) : '--'}</span>s<br>Dernier: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s (S1: <span style="${sectorColor(me.race.lastS1Time, me.race.bestS1Time, data.bestQualifS1Time)}">${me.race.lastS1Time ? me.race.lastS1Time.toFixed(2) : '--'}</span> | S2: <span style="${sectorColor(me.race.lastS2Time, me.race.bestS2Time, data.bestQualifS2Time)}">${me.race.lastS2Time ? me.race.lastS2Time.toFixed(2) : '--'}</span> | S3: <span style="${sectorColor(me.race.lastS3Time, me.race.bestS3Time, data.bestQualifS3Time)}">${me.race.lastS3Time ? me.race.lastS3Time.toFixed(2) : '--'}</span>) | Meilleur: ${me.race.bestTime ? me.race.bestTime.toFixed(2) : '--'}s`;
-                        } else if (data.phase === 'race') {
-                            document.getElementById('chrono').innerHTML = `COURSE - ${data.circuit || ''}<br>Tour: ${me.currentLapTime}s (Prec: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s) (${me.race.laps || 0} / ${data.targetLaps})<br>S1: <span style="${sectorColor(me.race.split1Time, me.race.bestS1Time, data.bestQualifS1Time)}">${me.race.split1Time ? me.race.split1Time.toFixed(2) : '--'}</span>s | S2: <span style="${sectorColor(me.race.split2Time && me.race.split1Time ? me.race.split2Time - me.race.split1Time : 0, me.race.bestS2Time, data.bestQualifS2Time)}">${me.race.split2Time && me.race.split1Time ? (me.race.split2Time - me.race.split1Time).toFixed(2) : '--'}</span>s<br>Dernier: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s (S1: <span style="${sectorColor(me.race.lastS1Time, me.race.bestS1Time, data.bestQualifS1Time)}">${me.race.lastS1Time ? me.race.lastS1Time.toFixed(2) : '--'}</span> | S2: <span style="${sectorColor(me.race.lastS2Time, me.race.bestS2Time, data.bestQualifS2Time)}">${me.race.lastS2Time ? me.race.lastS2Time.toFixed(2) : '--'}</span> | S3: <span style="${sectorColor(me.race.lastS3Time, me.race.bestS3Time, data.bestQualifS3Time)}">${me.race.lastS3Time ? me.race.lastS3Time.toFixed(2) : '--'}</span>) | Meilleur: ${me.race.bestTime ? me.race.bestTime.toFixed(2) : '--'}s`;
-                        } else if (data.phase === 'finished') {
-                            document.getElementById('chrono').innerHTML = `TERMINE<br>Vainqueur: ${data.winner || '--'}<br>Tour: ${me.race.laps || 0} / ${data.targetLaps}`;
+                            const left = Math.max(0, data.qualifTimeLeft || 0);
+                            const mins = Math.floor(left / 60000);
+                            const secs = Math.floor((left % 60000) / 1000);
+                            document.getElementById('qualifTimerValue').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+                            qualifTimerEl.classList.toggle('urgent', left < 60000); // dernière minute en jaune
+                            qualifTimerEl.style.display = 'flex';
+                            document.getElementById('lastLapBar').classList.add('has-qualif');
                         } else {
-                            document.getElementById('chrono').innerHTML = `Tour: ${me.currentLapTime}s (Prec: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s)<br>Dernier: ${me.race.lastLapTime ? me.race.lastLapTime.toFixed(2) : '--'}s (S1: <span style="${sectorColor(me.race.lastS1Time, me.race.bestS1Time, data.bestQualifS1Time)}">${me.race.lastS1Time ? me.race.lastS1Time.toFixed(2) : '--'}</span> | S2: <span style="${sectorColor(me.race.lastS2Time, me.race.bestS2Time, data.bestQualifS2Time)}">${me.race.lastS2Time ? me.race.lastS2Time.toFixed(2) : '--'}</span> | S3: <span style="${sectorColor(me.race.lastS3Time, me.race.bestS3Time, data.bestQualifS3Time)}">${me.race.lastS3Time ? me.race.lastS3Time.toFixed(2) : '--'}</span>) | Meilleur: ${me.race.bestTime ? me.race.bestTime.toFixed(2) : '--'}s`;
+                            qualifTimerEl.style.display = 'none';
+                            document.getElementById('lastLapBar').classList.remove('has-qualif');
+                        }
+                        const lapHtml = `<div class="hud-lap">${curLap > 0 ? formatTime(curLap) : '0.00'}</div>`;
+                        const bestHtml = `<div class="hud-best">Meilleur <span style="color:#00ff00">${formatTime(me.race.bestTime)}</span></div>`;
+                        if (data.phase === 'race') {
+                            const lapNum = Math.min((me.race.laps || 0) + 1, data.targetLaps);
+                            const posTxt = me.racePos ? ` · P${me.racePos}/${me.raceCount}` : '';
+                            // Écart avec la voiture qui me précède (rien si je suis en tête)
+                            const gapTxt = (me.racePos > 1) ? `<div class="hud-gap">${formatGap(me)} <span>sur ${escapeHtml(me.aheadName || '')}</span></div>` : '';
+                            chronoEl.innerHTML = `<div class="hud-phase">TOUR ${lapNum} / ${data.targetLaps}${posTxt}</div>${lapHtml}${gapTxt}${bestHtml}`;
+                        } else if (data.phase === 'finished') {
+                            chronoEl.innerHTML = `<div class="hud-phase">TERMINÉ</div><div>Vainqueur : ${escapeHtml(data.winner || '--')}</div><div class="hud-best">Tours ${me.race.laps || 0} / ${data.targetLaps}</div>`;
+                        } else {
+                            // Qualification et autres phases : « QUALIF » est déjà affiché en haut à gauche
+                            chronoEl.innerHTML = `${lapHtml}${bestHtml}`;
                         }
                         
                         if (me.onTrack) {
@@ -562,28 +653,39 @@ function updateLastLapBar(race, data) {
                     if (data.circuit && circuitLeaderboards[data.circuit] && circuitLeaderboards[data.circuit].length > 0) {
                         lbEntries = circuitLeaderboards[data.circuit];
                     }
-                    if (lbEntries && lbEntries.length > 0) {
-                        let lbHtml = '<div style="font-weight:bold;margin-bottom:5px;">TOP 10</div>';
-                        lbEntries.slice(0, 10).forEach((entry, i) => {
-                            lbHtml += `<div>${i + 1}. ${entry.nickname} - ${entry.time.toFixed(2)}s</div>`;
-                        });
-                        document.getElementById('leaderboardList').innerHTML = lbHtml;
-                    }
+                    renderRecord(lbEntries);
 
+                    // Classement de la séance (qualification) : les 3 premiers + moi si je suis plus loin
                     let statusEl = document.getElementById('status');
                     if (data.phase === 'qualif') {
-                        let html = '<div style="font-weight:bold;margin-bottom:6px;">Qualification</div>';
-                        html += '<table style="width:100%;border-collapse:collapse;font-size:14px;"><tr><th style="text-align:left;padding:2px 6px;">Joueur</th><th style="text-align:right;padding:2px 6px;">Meilleur</th></tr>';
-                        let arr = Object.values(players).sort((a, b) => (a.race.bestTime || Infinity) - (b.race.bestTime || Infinity));
-                        arr.forEach(p => {
-                            html += `<tr><td style="text-align:left;padding:2px 6px;">${p.nickname || 'Pilote'}</td><td style="text-align:right;padding:2px 6px;">${p.race.bestTime ? p.race.bestTime.toFixed(2) + 's' : '--'}</td></tr>`;
+                        const arr = Object.values(players).sort((a, b) => ((a.race && a.race.bestTime) || Infinity) - ((b.race && b.race.bestTime) || Infinity));
+                        const myPos = arr.findIndex(p => p.id === myId);
+                        let html = '<div class="hud-title">CLASSEMENT</div>';
+                        const row = (p, i) => `<div class="hud-row${p.id === myId ? ' me' : ''}"><span class="hud-name">${i + 1}. ${escapeHtml(p.nickname || 'Pilote')}</span><span class="hud-time">${formatTime(p.race && p.race.bestTime)}</span></div>`;
+                        arr.slice(0, 3).forEach((p, i) => { html += row(p, i); });
+                        if (myPos >= 3) {
+                            if (myPos > 3) html += '<div class="hud-sep">…</div>';
+                            html += row(arr[myPos], myPos);
+                        }
+                        statusEl.innerHTML = html;
+                    } else if ((data.phase === 'race' || data.phase === 'finished') && Object.values(players).some(p => p.racePos)) {
+                        // Classement en course : les 3 premiers, la voiture juste devant moi et moi,
+                        // avec l'écart de chacun sur la voiture qui le précède
+                        const arr = Object.values(players).filter(p => p.racePos).sort((a, b) => a.racePos - b.racePos);
+                        const myPos = arr.findIndex(p => p.id === myId);
+                        const shown = new Set([0, 1, 2]);
+                        if (myPos >= 0) { shown.add(myPos); if (myPos > 0) shown.add(myPos - 1); }
+                        let html = '<div class="hud-title">CLASSEMENT</div>';
+                        let last = -1;
+                        arr.forEach((p, i) => {
+                            if (!shown.has(i)) return;
+                            if (i > last + 1) html += '<div class="hud-sep">…</div>';
+                            last = i;
+                            html += `<div class="hud-row${p.id === myId ? ' me' : ''}"><span class="hud-name">${i + 1}. ${escapeHtml(p.nickname || 'Pilote')}</span><span class="hud-time">${formatGap(p)}</span></div>`;
                         });
-                        html += '</table>';
                         statusEl.innerHTML = html;
                     } else {
-                        if (statusEl.innerHTML.includes('<table')) {
-                            statusEl.innerText = 'Statut: En course';
-                        }
+                        statusEl.innerHTML = '';
                     }
                 } else if (data.type === 'error') {
                     alert(data.message);
@@ -878,18 +980,30 @@ function updateLastLapBar(race, data) {
                 const distance = 40 + gi * 120;
                 const gx = p0.x + nx * across - (dx / len) * distance;
                 const gy = p0.y + ny * across - (dy / len) * distance;
+                // Emplacement de grille : un trait blanc en travers de la piste devant la voiture,
+                // avec deux petits traits aux extrémités qui partent vers l'arrière (vers la voiture).
+                // Repère local : -y = sens de la course (comme les voitures), x = en travers.
                 ctx.save();
                 ctx.translate(gx, gy);
-                ctx.rotate(Math.atan2(dx, -dy) + Math.PI / 2);
-                ctx.fillStyle = 'rgba(255,255,255,0.35)';
-                ctx.fillRect(-20, -56, 40, 112);
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(-20, -56, 40, 112);
-                ctx.fillStyle = '#ffcc00';
-                ctx.font = 'bold 16px Arial';
+                ctx.rotate(Math.atan2(dx, -dy));
+                const half = 32;   // demi-largeur du trait (la voiture fait 40 de large)
+                const leg = 22;    // longueur des petits traits vers l'arrière
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 5;
+                ctx.lineCap = 'butt';
+                ctx.lineJoin = 'miter';
+                ctx.beginPath();
+                ctx.moveTo(-half, leg);
+                ctx.lineTo(-half, 0);
+                ctx.lineTo(half, 0);
+                ctx.lineTo(half, leg);
+                ctx.stroke();
+                // Numéro de la place, juste devant le trait
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 18px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText((gi + 1).toString(), 0, 8);
+                ctx.textBaseline = 'alphabetic';
+                ctx.fillText((gi + 1).toString(), 0, -8);
                 ctx.restore();
             }
 

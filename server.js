@@ -99,7 +99,8 @@ for (let i = 0; i < ROOM_COUNT; i++) {
         timer: null,
         bestQualifS1Time: 0,
         bestQualifS2Time: 0,
-        bestQualifS3Time: 0
+        bestQualifS3Time: 0,
+        bestQualifLapTime: 0
     };
 }
 
@@ -268,7 +269,217 @@ function gridPosition(tp, idx) {
     };
 }
 
+// ---------------------------------------------------------------------------
+// Classement en course et écart avec la voiture précédente
+// ---------------------------------------------------------------------------
+// La progression d'une voiture = (nombre de passages de ligne) × longueur du circuit + distance
+// parcourue depuis la ligne (projection sur le tracé). Pour l'écart en temps, on note l'instant
+// où chaque voiture franchit des repères réguliers (tous les GAP_MARKER unités) : l'écart avec la
+// voiture de devant = différence entre nos instants de passage au dernier repère que j'ai franchi.
+const GAP_MARKER = 200;
+
+function getTrackGeometry(room, pts) {
+    if (room._trackGeo && room._trackGeo.pts === pts) return room._trackGeo;
+    const n = pts.length;
+    const cum = [0];
+    for (let i = 0; i < n; i++) {
+        const a = pts[i], b = pts[(i + 1) % n];
+        cum.push(cum[i] + Math.hypot(b.x - a.x, b.y - a.y));
+    }
+    room._trackGeo = { pts, n, cum, total: cum[n] || 1 };
+    return room._trackGeo;
+}
+
+// Distance le long du tracé du point le plus proche de (x, y). Recherche locale autour du
+// segment précédent pour ne pas « sauter » sur une portion voisine du circuit.
+// ---------------------------------------------------------------------------
+// Anti-raccourci : on ne peut pas couper le circuit
+// ---------------------------------------------------------------------------
+// On retient la dernière position valide sur la piste et sa progression le long du tracé.
+// Quand la voiture est de nouveau sur la piste, on compare l'avance gagnée le long du tracé à la
+// distance réellement parcourue depuis. Si elle a avancé nettement plus qu'elle n'a roulé, elle a
+// coupé (par l'herbe, ou en sautant sur une portion de route voisine) : elle est remise sur la piste
+// au dernier point valide, arrêtée, avec une pénalité de 2 secondes.
+const CUT_PENALTY_MS = 2000;
+
+function wrapDelta(ds, L) {
+    ds = ds % L;
+    if (ds > L / 2) ds -= L;
+    if (ds < -L / 2) ds += L;
+    return ds;
+}
+
+// Saut maximal de la projection en passant le sommet i du tracé par l'intérieur
+function getCornerAllowance(geo, pts, i, rw) {
+    if (!geo.cornerAllow || geo.cornerAllowRw !== rw) {
+        const n = pts.length;
+        geo.cornerAllow = new Array(n).fill(0);
+        geo.cornerAllowRw = rw;
+        for (let v = 0; v < n; v++) {
+            // segments voisins non nuls (les points en double sont ignorés)
+            let a = (v - 1 + n) % n, guard = 0;
+            while (guard++ < n && Math.hypot(pts[v].x - pts[a].x, pts[v].y - pts[a].y) < 1) a = (a - 1 + n) % n;
+            let b = (v + 1) % n; guard = 0;
+            while (guard++ < n && Math.hypot(pts[b].x - pts[v].x, pts[b].y - pts[v].y) < 1) b = (b + 1) % n;
+            const d1x = pts[v].x - pts[a].x, d1y = pts[v].y - pts[a].y;
+            const d2x = pts[b].x - pts[v].x, d2y = pts[b].y - pts[v].y;
+            const l1 = Math.hypot(d1x, d1y) || 1, l2 = Math.hypot(d2x, d2y) || 1;
+            const cos = Math.max(-1, Math.min(1, (d1x * d2x + d1y * d2y) / (l1 * l2)));
+            const turn = Math.min(Math.acos(cos), 150 * Math.PI / 180);
+            geo.cornerAllow[v] = Math.min(rw * 4, rw * Math.tan(turn / 2));
+        }
+    }
+    return geo.cornerAllow[i];
+}
+
+function checkTrackCut(room, id, p, trackPts, onTrack, now) {
+    const geo = getTrackGeometry(room, trackPts);
+    const L = geo.total;
+    const rw = room.roadWidth || 300;
+    const margin = Math.max(150, rw * 0.5);
+    if (!room.cutTrack) room.cutTrack = {};
+    let st = room.cutTrack[id];
+    // Nouveau joueur ou changement de phase (téléportation sur la grille…) : on repart de zéro
+    if (!st || st.phase !== room.phase) {
+        st = room.cutTrack[id] = { phase: room.phase, valid: null, dist: 0 };
+    }
+    const car = p.car;
+    if (!onTrack) {
+        st.dist += Math.abs(car.speed);
+        return;
+    }
+    // Sur la piste : position la plus plausible compte tenu de la distance parcourue
+    const travelled = st.dist + Math.abs(car.speed);
+    const proj = projectOnTrack(geo, car.x, car.y, st.valid ? st.valid.s + travelled : null, rw / 2 + 10);
+    if (st.valid) {
+        const ds = wrapDelta(proj.s - st.valid.s, L);
+        // Si la voiture est restée sur le bitume (st.dist = 0), la projection peut « sauter » sans
+        // triche dans une épingle plus serrée que la largeur de la route : on tolère un saut d'environ
+        // un demi-tour de route (π × largeur). Un croisement (Suzuka) ou une coupe par l'herbe fait
+        // sauter bien plus loin.
+        const onTrackAllow = st.dist > 0 ? 0 : Math.PI * rw;
+        // Tolérance des virages franchis : à l'intérieur d'un angle du tracé, la projection sur l'axe
+        // « saute » d'un segment à l'autre sans que la voiture triche (jusqu'à rw × tan(angle/2)).
+        let cornerAllow = 0;
+        if (ds > 0) {
+            const n = trackPts.length;
+            for (let k = 1, i = (st.valid.seg + 1) % n; k <= n && i !== (proj.seg + 1) % n; k++, i = (i + 1) % n) {
+                cornerAllow += getCornerAllowance(geo, trackPts, i, rw);
+            }
+        }
+        if (ds > travelled + margin + Math.max(cornerAllow, onTrackAllow)) {
+            // Raccourci : retour au dernier point valide, sur l'axe de la piste
+            const v = st.valid;
+            const a = trackPts[v.seg], b = trackPts[(v.seg + 1) % trackPts.length];
+            car.x = v.px;
+            car.y = v.py;
+            car.angle = Math.atan2(b.x - a.x, -(b.y - a.y));
+            car.speed = 0;
+            p.race.penaltyUntil = now + CUT_PENALTY_MS;
+            p.race.blink = true;
+            p.lastCutAt = now; // le client affiche un message
+            p.race.prevAlong = undefined; // la remise en place ne doit pas compter comme un passage de ligne
+            st.dist = 0;
+            return;
+        }
+    }
+    // Point valide : on mémorise sa projection sur l'axe de la piste
+    const a = trackPts[proj.seg], b = trackPts[(proj.seg + 1) % trackPts.length];
+    const segLen = (geo.cum[proj.seg + 1] - geo.cum[proj.seg]) || 1;
+    const t = (proj.s - geo.cum[proj.seg]) / segLen;
+    st.valid = { s: proj.s, seg: proj.seg, px: a.x + (b.x - a.x) * t, py: a.y + (b.y - a.y) * t };
+    st.dist = 0;
+}
+
+// Position (distance le long du tracé) du point (x, y).
+// Là où deux portions du circuit sont proches, plusieurs segments peuvent « contenir » la voiture :
+// parmi ceux dont la route la contient (distance ≤ onRoadDist), on garde celui dont la position est
+// la plus proche de la position attendue (expectedS = dernière position + distance parcourue).
+// Sans position attendue, ou si la voiture n'est sur aucune route, on prend le segment le plus proche.
+function projectOnTrack(geo, x, y, expectedS, onRoadDist) {
+    const { pts, n, cum, total } = geo;
+    let nearest = null, plausible = null, plausibleErr = Infinity;
+    for (let i = 0; i < n; i++) {
+        const a = pts[i], b = pts[(i + 1) % n];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const l2 = dx * dx + dy * dy;
+        if (l2 < 1) continue; // point en double
+        let t = ((x - a.x) * dx + (y - a.y) * dy) / l2;
+        t = Math.max(0, Math.min(1, t));
+        const d = Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t));
+        const r = { d, s: cum[i] + t * (cum[i + 1] - cum[i]), seg: i };
+        if (!nearest || d < nearest.d) nearest = r;
+        if (expectedS !== null && expectedS !== undefined && d <= onRoadDist) {
+            const err = Math.abs(wrapDelta(r.s - expectedS, total));
+            if (err < plausibleErr) { plausibleErr = err; plausible = r; }
+        }
+    }
+    return plausible || nearest;
+}
+
+function updateRaceStandings(room, trackPts) {
+    const geo = getTrackGeometry(room, trackPts);
+    const L = geo.total;
+    const now = Date.now();
+    if (!room.raceTrack) room.raceTrack = {};
+    const list = [];
+    for (const id of Object.keys(room.players)) {
+        const p = room.players[id];
+        let rt = room.raceTrack[id];
+        const rwS = room.roadWidth || 300;
+        const proj = projectOnTrack(geo, p.car.x, p.car.y, rt ? rt.s + Math.abs(p.car.speed) : null, rwS * 1.5);
+        if (!rt) {
+            // Sur la grille, les voitures sont juste derrière la ligne : leur tour commence à -1
+            rt = room.raceTrack[id] = { lap: proj.s > L / 2 ? -1 : 0, s: proj.s, seg: proj.seg, marks: {}, lastMark: null };
+        } else {
+            const ds = proj.s - rt.s;
+            if (ds < -L / 2) rt.lap++;       // passage de la ligne vers l'avant
+            else if (ds > L / 2) rt.lap--;   // recul derrière la ligne
+            rt.s = proj.s;
+            rt.seg = proj.seg;
+        }
+        rt.progress = rt.lap * L + rt.s;
+        // Instant de passage de chaque repère (seulement en avançant)
+        const mark = Math.floor(rt.progress / GAP_MARKER);
+        if (rt.lastMark === null) rt.lastMark = mark;
+        while (rt.lastMark < mark) {
+            rt.lastMark++;
+            rt.marks[rt.lastMark] = now;
+        }
+        list.push({ p, rt });
+    }
+    // Les voitures arrivées d'abord (ordre d'arrivée), puis par progression
+    list.sort((a, b) => {
+        const fa = a.p.race.finished, fb = b.p.race.finished;
+        if (fa && fb) return (a.p.race.finishTime || 0) - (b.p.race.finishTime || 0);
+        if (fa !== fb) return fa ? -1 : 1;
+        return b.rt.progress - a.rt.progress;
+    });
+    list.forEach((e, i) => {
+        e.p.racePos = i + 1;
+        e.p.raceCount = list.length;
+        e.p.gapAhead = null;
+        e.p.gapAheadLaps = 0;
+        e.p.aheadName = null;
+        if (i === 0) return;
+        const ahead = list[i - 1];
+        e.p.aheadName = ahead.p.nickname || 'Pilote';
+        const lapsBehind = Math.floor((ahead.rt.progress - e.rt.progress) / L);
+        if (lapsBehind >= 1) { e.p.gapAheadLaps = lapsBehind; return; }
+        const k = e.rt.lastMark;
+        const tMe = e.rt.marks[k], tAhead = ahead.rt.marks[k];
+        if (tMe && tAhead) {
+            e.p.gapAhead = Math.max(0, (tMe - tAhead) / 1000);
+        } else {
+            // Repère pas encore commun (tout début de course) : estimation distance / vitesse
+            const v = Math.max(1, Math.abs(e.p.car.speed)) * 60; // unités par seconde (60 images/s)
+            e.p.gapAhead = Math.max(0, (ahead.rt.progress - e.rt.progress) / v);
+        }
+    });
+}
+
 function startRacePhase(room) {
+    room.raceTrack = {}; // remise à zéro du suivi du classement
     let sorted = Object.values(room.players).sort((a, b) => {
         let ta = a.race.bestTime || Infinity;
         let tb = b.race.bestTime || Infinity;
@@ -413,6 +624,7 @@ io.on('connection', (socket) => {
                         room.bestQualifS1Time = 0;
                         room.bestQualifS2Time = 0;
                         room.bestQualifS3Time = 0;
+                        room.bestQualifLapTime = 0;
                         room.readyStartTime = null;
                         if (room.timer) {
                             clearTimeout(room.timer);
@@ -485,6 +697,7 @@ io.on('connection', (socket) => {
                         rooms[roomId].bestQualifS1Time = 0;
                         rooms[roomId].bestQualifS2Time = 0;
                         rooms[roomId].bestQualifS3Time = 0;
+                        rooms[roomId].bestQualifLapTime = 0;
                         rooms[roomId].readyStartTime = null;
                     }
                 }
@@ -573,7 +786,7 @@ setInterval(() => {
             }
             const lightsElapsed = Date.now() - (room.lightsStartTime || Date.now());
             const lightsCount = Math.min(5, Math.floor(lightsElapsed / 1000) + 1);
-            const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft: 0, raceTimeLeft: 0, readyTimeLeft: 0, lightsCount, lightsOutTime: room.lightsOutTime, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0 });
+            const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft: 0, raceTimeLeft: 0, readyTimeLeft: 0, lightsCount, lightsOutTime: room.lightsOutTime, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0, bestQualifLapTime: room.bestQualifLapTime || 0 });
             for (let pid of playerIds) {
                 if (playerWs[pid] && playerWs[pid].connected) playerWs[pid].emit('msg', payload);
             }
@@ -582,7 +795,7 @@ setInterval(() => {
 
         if (room.phase === 'ready') {
             const readyTimeLeft = Math.max(0, room.readyDuration - (Date.now() - room.readyStartTime));
-            const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft: 0, raceTimeLeft: 0, readyTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0 });
+            const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft: 0, raceTimeLeft: 0, readyTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0, bestQualifLapTime: room.bestQualifLapTime || 0 });
             for (let pid of playerIds) {
                 if (playerWs[pid] && playerWs[pid].connected) playerWs[pid].emit('msg', payload);
             }
@@ -668,6 +881,15 @@ setInterval(() => {
                     c1.speed = c2.speed * 0.7;
                     c2.speed = tempSpeed * 0.7;
                 }
+            }
+        }
+
+        // 2b. Anti-raccourci (tous les circuits, toutes les phases où l'on roule)
+        {
+            const nowCut = Date.now();
+            for (let id of playerIds) {
+                const p = players[id];
+                checkTrackCut(room, id, p, trackPts, isOnTrack(p.car.x, p.car.y, trackPts, room.roadWidth), nowCut);
             }
         }
 
@@ -769,6 +991,7 @@ setInterval(() => {
                         if (race.split1Time > 0 && (!room.bestQualifS1Time || race.split1Time < room.bestQualifS1Time)) room.bestQualifS1Time = race.split1Time;
                         if (_s2 > 0 && (!room.bestQualifS2Time || _s2 < room.bestQualifS2Time)) room.bestQualifS2Time = _s2;
                         if (_s3 > 0 && (!room.bestQualifS3Time || _s3 < room.bestQualifS3Time)) room.bestQualifS3Time = _s3;
+                        if (lapDuration > 0 && (!room.bestQualifLapTime || lapDuration < room.bestQualifLapTime)) room.bestQualifLapTime = lapDuration;
                     }
                     if (!race.bestTime || lapDuration < race.bestTime) {
                         race.bestTime = lapDuration;
@@ -844,11 +1067,16 @@ setInterval(() => {
             p.speedKmh = Math.round(Math.abs(car.speed) * 10);
         }
 
+        // 4. Classement en course et écarts
+        if (room.phase === 'race' || room.phase === 'finished') {
+            updateRaceStandings(room, trackPts);
+        }
+
         // Diffuser l'état de cette salle aux joueurs de cette salle
 const qualifTimeLeft = room.phase === 'qualif' ? Math.max(0, room.qualifDuration - (Date.now() - room.qualifStartTime)) : 0;
 const raceTimeLeft = room.phase === 'race' ? (Date.now() - room.raceStartTime) : 0;
 const readyTimeLeft = room.phase === 'ready' ? Math.max(0, room.readyDuration - (Date.now() - room.readyStartTime)) : 0;
-const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, readyTimeLeft, lightsCount: room.phase === 'lights' ? 5 : (room.lightsOutTime ? 5 : 0), lightsOutTime: room.lightsOutTime, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0 });
+const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, readyTimeLeft, lightsCount: room.phase === 'lights' ? 5 : (room.lightsOutTime ? 5 : 0), lightsOutTime: room.lightsOutTime, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0, bestQualifLapTime: room.bestQualifLapTime || 0 });
         for (let pid of playerIds) {
             if (playerWs[pid] && playerWs[pid].connected) {
                 playerWs[pid].emit('msg', payload);
