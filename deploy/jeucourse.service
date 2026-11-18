@@ -1,0 +1,32 @@
+# Service systemd du serveur de jeu jeuCourse.
+# Ne pas copier ce fichier à la main : lancer deploy/install-service.sh, qui remplace
+# __USER__, __DIR__ et __NODE__ par les bonnes valeurs et installe le service.
+
+[Unit]
+Description=jeuCourse - serveur de jeu multijoueur
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__DIR__
+ExecStart=__NODE__ __DIR__/server.js
+Environment=NODE_ENV=production
+
+# Redémarrage automatique en cas de plantage
+Restart=always
+RestartSec=3
+
+# Messages du serveur dans le journal système (journalctl -u jeucourse)
+StandardOutput=journal
+StandardError=journal
+
+# Durcissement : le service ne peut écrire que dans le dossier du jeu (classements)
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=__DIR__
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
