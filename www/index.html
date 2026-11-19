@@ -289,6 +289,9 @@ function sectorColor(val, personalBest, overallBest) {
     return '';
 }
 
+// Demande d'entrée dans une salle en attente de réponse du serveur
+let pendingJoin = false;
+
 // Dernier raccourci déjà signalé (undefined = pas encore reçu d'état du serveur)
 let lastCutSeen = undefined;
 let cutWarningTimer = null;
@@ -500,7 +503,7 @@ function updateLastLapBar(race, data) {
                         let btn = document.createElement('button');
                         btn.className = 'room-btn';
                         let playersText = room.players.length > 0 ? room.players.join(', ') : 'Vide';
-                        let statusColor = room.status === 'en course' ? '#e63946' : (room.status === 'en attente' ? '#ffcc00' : '#888');
+                        let statusColor = room.status === 'en course' ? '#e63946' : (room.status === 'en attente' ? '#ffcc00' : (room.status === 'qualif en cours' ? '#ff8c42' : '#888'));
                         let timeText = '';
                         if (room.status === 'en attente') {
                             timeText = ` · ${Math.floor(room.timeLeft / 60)}:${(room.timeLeft % 60).toString().padStart(2, '0')}`;
@@ -512,11 +515,18 @@ function updateLastLapBar(race, data) {
                         btn.onclick = () => {
                             ws.send(JSON.stringify({ type: 'joinRoom', roomId: room.id }));
                             currentRoom = room.id;
+                            pendingJoin = true;
                             document.getElementById('roomScreen').style.display = 'none';
-                            document.getElementById('lobbyScreen').style.display = 'flex';
-                            document.getElementById('lobbyRoomId').innerText = `Salle ${room.id + 1}`;
+                            // Qualifications en cours : on arrive directement sur la piste (sans salle d'attente)
+                            if (room.phase !== 'qualif') {
+                                document.getElementById('lobbyScreen').style.display = 'flex';
+                                document.getElementById('lobbyRoomId').innerText = `Salle ${room.id + 1}`;
+                            }
                         };
-                        if (room.raceStarted) {
+                        // Salle non rejoignable : course en cours ou salle pleine
+                        // (anciens serveurs sans « joinable » : on se base sur raceStarted)
+                        const joinable = (room.joinable !== undefined) ? room.joinable : !room.raceStarted;
+                        if (!joinable) {
                             btn.style.opacity = '0.5';
                             btn.style.cursor = 'not-allowed';
                             btn.onclick = null;
@@ -689,7 +699,15 @@ function updateLastLapBar(race, data) {
                     }
                 } else if (data.type === 'error') {
                     alert(data.message);
+                    // Entrée dans la salle refusée : retour au choix des salles
+                    if (pendingJoin) {
+                        pendingJoin = false;
+                        currentRoom = null;
+                        document.getElementById('lobbyScreen').style.display = 'none';
+                        document.getElementById('roomScreen').style.display = 'flex';
+                    }
                 } else if (data.type === 'joinedRoom') {
+                    pendingJoin = false;
                     if (data.playerId) myId = data.playerId;
                 }
             };

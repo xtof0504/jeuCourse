@@ -5,7 +5,7 @@
 //   Pour tester avec le serveur sur le PC : 'http://localhost:3002' + adb reverse tcp:3002 tcp:3002
 //   Si l'adresse du serveur change, modifier SERVER_URL_APP puis regénérer l'APK.
 (function () {
-  var SERVER_URL_APP = 'http://82.66.218.220:3002';
+  var SERVER_URL_APP = 'http://88.96.47.146:3002';
   var isNativeApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   window.SERVER_URL = isNativeApp ? SERVER_URL_APP : '';
 })();

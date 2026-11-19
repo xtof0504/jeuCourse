@@ -478,6 +478,11 @@ function updateRaceStandings(room, trackPts) {
     });
 }
 
+// Une salle peut être rejointe en attente (lobby) et pendant les qualifications
+function isRoomJoinable(room) {
+    return room.phase === 'lobby' || room.phase === 'qualif';
+}
+
 function startRacePhase(room) {
     room.raceTrack = {}; // remise à zéro du suivi du classement
     let sorted = Object.values(room.players).sort((a, b) => {
@@ -547,20 +552,26 @@ io.on('connection', (socket) => {
                 if (!hasNickname) return; // pas de salle sans surnom
                 let roomId = data.roomId;
                 if (roomId < 0 || roomId >= ROOM_COUNT) return;
-                
-                if (currentRoom !== null && rooms[currentRoom]) {
-                    delete rooms[currentRoom].players[playerId];
-                }
-                
-                currentRoom = roomId;
-                playerRoom[playerId] = roomId;
                 let room = rooms[roomId];
-                
+
+                // On peut rejoindre une salle en attente, ou pendant les qualifications
+                // (pas pendant la mise en grille, les feux ni la course)
+                if (!isRoomJoinable(room)) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Course en cours : impossible de rejoindre cette salle' }));
+                    return;
+                }
                 const playerCount = Object.keys(room.players).length;
                 if (playerCount >= MAX_PLAYERS) {
                     ws.send(JSON.stringify({ type: 'error', message: 'Salle complète' }));
                     return;
                 }
+
+                if (currentRoom !== null && rooms[currentRoom]) {
+                    delete rooms[currentRoom].players[playerId];
+                }
+
+                currentRoom = roomId;
+                playerRoom[playerId] = roomId;
                 
                 const tp = room.trackPoints || DEFAULT_TRACK;
                 const gp = gridPosition(tp, playerCount);
@@ -1103,7 +1114,9 @@ setInterval(() => {
             count: players.length,
             players: players,
             raceStarted: room.raceStarted,
-            status: status,
+            phase: room.phase,
+            joinable: isRoomJoinable(room) && players.length < MAX_PLAYERS,
+            status: room.phase === 'qualif' ? 'qualif en cours' : status,
             timeLeft: Math.ceil(timeLeft / 1000)
         });
     }
