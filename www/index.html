@@ -544,7 +544,7 @@ function updateLastLapBar(race, data) {
                         const cs = document.getElementById('circuitSelect');
                         if (cs) cs.value = data.circuit;
                         if (tracksData && tracksData[data.circuit]) trackPoints = tracksData[data.circuit];
-                        roadWidth = (data.circuit === 'Monaco Grand Prix') ? 123 : 300;
+                        roadWidth = (data.circuit === 'Monaco Grand Prix') ? 250 : 300;
                     }
                     
                     const lobbyPlayers = document.getElementById('lobbyPlayers');
@@ -556,7 +556,11 @@ function updateLastLapBar(race, data) {
                         lobbyPlayers.appendChild(row);
                     });
                     
-                    if (data.leaderboard && data.leaderboard.length > 0) renderRecord(data.leaderboard);
+                    if (data.circuitLeaderboards) {
+                        circuitLeaderboards = data.circuitLeaderboards;
+                    }
+                    const lobbyRecord = (data.circuit && circuitLeaderboards[data.circuit]) ? circuitLeaderboards[data.circuit] : [];
+                    renderRecord(lobbyRecord);
                 } else                 if (data.type === 'state') {
                     // Cacher l'écran de lobby si la course a démarré
                     document.getElementById('lobbyScreen').style.display = 'none';
@@ -566,7 +570,7 @@ function updateLastLapBar(race, data) {
                     players = data.players;
                     if (data.circuit && tracksData && tracksData[data.circuit]) {
                         trackPoints = tracksData[data.circuit];
-                        roadWidth = (data.circuit === 'Monaco Grand Prix') ? 123 : 300;
+                        roadWidth = (data.circuit === 'Monaco Grand Prix') ? 250 : 300;
                     }
                     if (data.circuitLeaderboards) {
                         circuitLeaderboards = data.circuitLeaderboards;
@@ -659,10 +663,7 @@ function updateLastLapBar(race, data) {
                         }
                     }
 
-                    let lbEntries = data.leaderboard || [];
-                    if (data.circuit && circuitLeaderboards[data.circuit] && circuitLeaderboards[data.circuit].length > 0) {
-                        lbEntries = circuitLeaderboards[data.circuit];
-                    }
+                    const lbEntries = (data.circuit && circuitLeaderboards[data.circuit]) ? circuitLeaderboards[data.circuit] : [];
                     renderRecord(lbEntries);
 
                     // Classement de la séance (qualification) : les 3 premiers + moi si je suis plus loin
@@ -929,6 +930,32 @@ function updateLastLapBar(race, data) {
             ctx.restore();
         }
 
+        function pointBackAlongTrack(pts, dist) {
+            const n = pts.length;
+            if (n < 2) return { x: pts[0].x, y: pts[0].y, tx: 1, ty: 0 };
+            let remaining = dist;
+            let idx = 0;
+            for (let steps = 0; steps < n * 2; steps++) {
+                const prev = (idx - 1 + n) % n;
+                const a = pts[prev], b = pts[idx];
+                const dx = b.x - a.x, dy = b.y - a.y;
+                const segLen = Math.hypot(dx, dy);
+                if (segLen < 1e-6) { idx = prev; continue; }
+                if (remaining <= segLen) {
+                    const t = remaining / segLen;
+                    return {
+                        x: b.x - dx * t,
+                        y: b.y - dy * t,
+                        tx: dx / segLen,
+                        ty: dy / segLen
+                    };
+                }
+                remaining -= segLen;
+                idx = prev;
+            }
+            return { x: pts[0].x, y: pts[0].y, tx: 1, ty: 0 };
+        }
+
         function drawTrack() {
             // roadWidth global
 
@@ -965,8 +992,9 @@ function updateLastLapBar(race, data) {
             ctx.lineWidth = 10;
             ctx.strokeStyle = '#ffff00';
             ctx.beginPath();
-            ctx.moveTo(p0.x + nx * 150, p0.y + ny * 150);
-            ctx.lineTo(p0.x - nx * 150, p0.y - ny * 150);
+            const finishHalf = roadWidth / 2;
+            ctx.moveTo(p0.x + nx * finishHalf, p0.y + ny * finishHalf);
+            ctx.lineTo(p0.x - nx * finishHalf, p0.y - ny * finishHalf);
             ctx.stroke();
 
             // Lignes pointillees blanches aux checkpoints (33% et 66%)
@@ -990,20 +1018,22 @@ function updateLastLapBar(race, data) {
                 ctx.restore();
             });
 
-            // Grille de départ (10 emplacements)
+            // Grille de départ (10 emplacements suivant le tracé avant la ligne)
             for (let gi = 0; gi < 10; gi++) {
-                const row = gi;
                 const side = (gi % 2 === 0) ? -1 : 1;
-                const across = side * 80;
+                const across = side * Math.min(80, roadWidth * 0.28);
                 const distance = 40 + gi * 120;
-                const gx = p0.x + nx * across - (dx / len) * distance;
-                const gy = p0.y + ny * across - (dy / len) * distance;
+                const pt = pointBackAlongTrack(pts, distance);
+                const gnx = -pt.ty;
+                const gny = pt.tx;
+                const gx = pt.x + gnx * across;
+                const gy = pt.y + gny * across;
                 // Emplacement de grille : un trait blanc en travers de la piste devant la voiture,
                 // avec deux petits traits aux extrémités qui partent vers l'arrière (vers la voiture).
                 // Repère local : -y = sens de la course (comme les voitures), x = en travers.
                 ctx.save();
                 ctx.translate(gx, gy);
-                ctx.rotate(Math.atan2(dx, -dy));
+                ctx.rotate(Math.atan2(pt.tx, -pt.ty));
                 const half = 32;   // demi-largeur du trait (la voiture fait 40 de large)
                 const leg = 22;    // longueur des petits traits vers l'arrière
                 ctx.strokeStyle = '#ffffff';

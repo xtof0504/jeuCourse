@@ -70,7 +70,7 @@ function saveCircuitLeaderboards() {
 const tracksData = JSON.parse(fs.readFileSync(path.join(__dirname, 'www', 'tracks.json'), 'utf8'));
 const DEFAULT_TRACK = tracksData['Italian Grand Prix'];
 function getRoadWidth(circuit) {
-    return circuit === 'Monaco Grand Prix' ? 123 : 300;
+    return circuit === 'Monaco Grand Prix' ? 250 : 300;
 }
 let rooms = {};
 let playerWs = {}; // playerId -> ws
@@ -249,23 +249,45 @@ function collideOBB(c1, a1, c2, a2) {
     return { overlap: minOverlap, nx: mtvAxis.x, ny: mtvAxis.y };
 }
 
-function gridPosition(tp, idx) {
-    const p0 = tp[0];
-    const p1 = tp[1] || tp[0];
-    const dx = p1.x - p0.x;
-    const dy = p1.y - p0.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const nx = -dy / len;
-    const ny = dx / len;
-    const row = idx;
+function pointBackAlongTrack(tp, dist) {
+    const n = tp.length;
+    if (n < 2) return { x: tp[0].x, y: tp[0].y, tx: 1, ty: 0 };
+    let remaining = dist;
+    let idx = 0;
+    for (let steps = 0; steps < n * 2; steps++) {
+        const prev = (idx - 1 + n) % n;
+        const a = tp[prev], b = tp[idx];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const segLen = Math.hypot(dx, dy);
+        if (segLen < 1e-6) { idx = prev; continue; }
+        if (remaining <= segLen) {
+            const t = remaining / segLen;
+            return {
+                x: b.x - dx * t,
+                y: b.y - dy * t,
+                tx: dx / segLen,
+                ty: dy / segLen
+            };
+        }
+        remaining -= segLen;
+        idx = prev;
+    }
+    return { x: tp[0].x, y: tp[0].y, tx: 1, ty: 0 };
+}
+
+function gridPosition(tp, idx, roadWidth) {
+    const rw = roadWidth || 300;
     const side = (idx % 2 === 0) ? -1 : 1;
-    const across = side * 80;
+    const across = side * Math.min(80, rw * 0.28);
     const markerDistance = 40 + idx * 120;
     const carDistance = markerDistance + 70;
+    const pt = pointBackAlongTrack(tp, carDistance);
+    const nx = -pt.ty;
+    const ny = pt.tx;
     return {
-        x: p0.x + nx * across - (dx / len) * carDistance,
-        y: p0.y + ny * across - (dy / len) * carDistance,
-        angle: Math.atan2(dx, -dy)
+        x: pt.x + nx * across,
+        y: pt.y + ny * across,
+        angle: Math.atan2(pt.tx, -pt.ty)
     };
 }
 
@@ -492,7 +514,7 @@ function startRacePhase(room) {
     });
     sorted.forEach((p, idx) => {
         const tp = room.trackPoints || DEFAULT_TRACK;
-        const gp = gridPosition(tp, idx);
+        const gp = gridPosition(tp, idx, room.roadWidth);
         p.car.x = gp.x;
         p.car.y = gp.y;
         p.car.angle = gp.angle;
@@ -574,7 +596,7 @@ io.on('connection', (socket) => {
                 playerRoom[playerId] = roomId;
                 
                 const tp = room.trackPoints || DEFAULT_TRACK;
-                const gp = gridPosition(tp, playerCount);
+                const gp = gridPosition(tp, playerCount, room.roadWidth);
                 const startX = gp.x;
                 const startY = gp.y;
                 const startAngle = gp.angle;
@@ -797,7 +819,8 @@ setInterval(() => {
             }
             const lightsElapsed = Date.now() - (room.lightsStartTime || Date.now());
             const lightsCount = Math.min(5, Math.floor(lightsElapsed / 1000) + 1);
-            const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft: 0, raceTimeLeft: 0, readyTimeLeft: 0, lightsCount, lightsOutTime: room.lightsOutTime, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0, bestQualifLapTime: room.bestQualifLapTime || 0 });
+            const roomLeaderboard = circuitLeaderboards[room.circuit] || [];
+            const payload = JSON.stringify({ type: 'state', players, leaderboard: roomLeaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft: 0, raceTimeLeft: 0, readyTimeLeft: 0, lightsCount, lightsOutTime: room.lightsOutTime, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0, bestQualifLapTime: room.bestQualifLapTime || 0 });
             for (let pid of playerIds) {
                 if (playerWs[pid] && playerWs[pid].connected) playerWs[pid].emit('msg', payload);
             }
@@ -806,7 +829,8 @@ setInterval(() => {
 
         if (room.phase === 'ready') {
             const readyTimeLeft = Math.max(0, room.readyDuration - (Date.now() - room.readyStartTime));
-            const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft: 0, raceTimeLeft: 0, readyTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0, bestQualifLapTime: room.bestQualifLapTime || 0 });
+            const roomLeaderboard = circuitLeaderboards[room.circuit] || [];
+            const payload = JSON.stringify({ type: 'state', players, leaderboard: roomLeaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft: 0, raceTimeLeft: 0, readyTimeLeft, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0, bestQualifLapTime: room.bestQualifLapTime || 0 });
             for (let pid of playerIds) {
                 if (playerWs[pid] && playerWs[pid].connected) playerWs[pid].emit('msg', payload);
             }
@@ -1087,7 +1111,8 @@ setInterval(() => {
 const qualifTimeLeft = room.phase === 'qualif' ? Math.max(0, room.qualifDuration - (Date.now() - room.qualifStartTime)) : 0;
 const raceTimeLeft = room.phase === 'race' ? (Date.now() - room.raceStartTime) : 0;
 const readyTimeLeft = room.phase === 'ready' ? Math.max(0, room.readyDuration - (Date.now() - room.readyStartTime)) : 0;
-const payload = JSON.stringify({ type: 'state', players, leaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, readyTimeLeft, lightsCount: room.phase === 'lights' ? 5 : (room.lightsOutTime ? 5 : 0), lightsOutTime: room.lightsOutTime, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0, bestQualifLapTime: room.bestQualifLapTime || 0 });
+const roomLeaderboard = circuitLeaderboards[room.circuit] || [];
+const payload = JSON.stringify({ type: 'state', players, leaderboard: roomLeaderboard, raceStarted: room.raceStarted, phase: room.phase, qualifTimeLeft, raceTimeLeft, readyTimeLeft, lightsCount: room.phase === 'lights' ? 5 : (room.lightsOutTime ? 5 : 0), lightsOutTime: room.lightsOutTime, targetLaps: room.targetLaps, winner: room.winner, circuit: room.circuit, circuitLeaderboards: circuitLeaderboards, bestQualifS1Time: room.bestQualifS1Time || 0, bestQualifS2Time: room.bestQualifS2Time || 0, bestQualifS3Time: room.bestQualifS3Time || 0, bestQualifLapTime: room.bestQualifLapTime || 0 });
         for (let pid of playerIds) {
             if (playerWs[pid] && playerWs[pid].connected) {
                 playerWs[pid].emit('msg', payload);
@@ -1145,7 +1170,8 @@ setInterval(() => {
             players: Object.values(players).map(p => ({ id: p.id, nickname: p.nickname })),
             circuit: room.circuit,
             timeLeft: Math.ceil(timeLeft / 1000),
-            leaderboard
+            leaderboard: circuitLeaderboards[room.circuit] || [],
+            circuitLeaderboards
         });
         
         for (let pid of playerIds) {
